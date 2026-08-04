@@ -43,8 +43,9 @@ jobs:
           - k3_max
         seed: [0, 1, 2]
     env:
-      # Short of the six-hour job cap by enough to save and publish the cell.
-      SEGMENT_SECONDS: "19800"
+      # Short of the six-hour job cap by enough to pull a sixteen-gigabyte image
+      # ahead of the agent and to redact, cache and publish the cell behind it.
+      SEGMENT_SECONDS: "16200"
     steps:
       # The runtime image is sixteen gigabytes, and a runner has room for it
       # only once the toolchains it will never use are gone. Before anything
@@ -58,6 +59,13 @@ jobs:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v5
 
+      # A cell belongs to the weekend that started it. Without this the next
+      # weekend's first segment would restore a finished cell, find its budget
+      # spent, and republish last week's results for ever. Sunday and the Monday
+      # after it share a week here; any other day is its own.
+      - name: Name the generation this cell belongs to
+        run: echo "WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
+
       # The whole cell, sessions included: they are what the next segment adds
       # to, what the spend is summed over, and what the run is read from. The
       # credentials are the one thing that never travels with it.
@@ -65,8 +73,8 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: cells
-          key: cell-${{ matrix.flow }}-${{ matrix.seed }}-${{ github.run_id }}
-          restore-keys: cell-${{ matrix.flow }}-${{ matrix.seed }}-
+          key: cell-${{ matrix.flow }}-${{ matrix.seed }}-${{ env.WEEK }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: cell-${{ matrix.flow }}-${{ matrix.seed }}-${{ env.WEEK }}-
 
       # Staging skips a cell the cache already carries, so this both starts the
       # first segment and is a no-op for every one after it.
@@ -78,11 +86,17 @@ jobs:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           CODEX_ACCESS_TOKEN: ${{ secrets.CODEX_ACCESS_TOKEN }}
           KIMI_MODEL_API_KEY: ${{ secrets.KIMI_MODEL_API_KEY }}
+          # Which endpoint a Kimi key is redeemed at, when it is not the default.
+          KIMI_MODEL_BASE_URL: ${{ vars.KIMI_MODEL_BASE_URL }}
         run: |
           uv run stupidbench run \
             --flow ${{ matrix.flow }} \
             --seed ${{ matrix.seed }} \
             --seconds "$SEGMENT_SECONDS"
+
+      - name: Stop anything still holding the token
+        if: always()
+        run: docker rm -f $(docker ps -aq --filter name=stupidbench-) 2>/dev/null || true
 
       # Everything below leaves the runner into a public artifact or a public
       # cache, so nothing below runs until this has: it deletes what a CLI
@@ -102,7 +116,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: cells
-          key: cell-${{ matrix.flow }}-${{ matrix.seed }}-${{ github.run_id }}
+          key: cell-${{ matrix.flow }}-${{ matrix.seed }}-${{ env.WEEK }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       # Every segment publishes the cell as it then stands, so the artifact of
       # the last one holds the whole run: every session the agent kept, every

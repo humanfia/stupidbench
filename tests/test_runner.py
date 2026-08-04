@@ -123,3 +123,24 @@ def test_run_refuses_a_cell_that_was_never_staged(tmp_path: Path) -> None:
 
     with pytest.raises(RuntimeError, match="has not been staged"):
         runner.run(cell, 60)
+
+
+def test_a_segment_that_never_started_records_no_stop(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # An unpaired stop would charge the cell for every hour since the segment
+    # before it, and enough of those would retire the cell with budget unspent.
+    cell = Cell("opus5_max", 0, tmp_path / "cell")
+    runner.prepare(cell)
+    cell.record("start")
+    cell.record("stop")
+
+    class _Failing:
+        def __getattr__(self, _name: str) -> object:
+            raise RuntimeError("no docker here")
+
+    monkeypatch.setattr(runner.docker, "from_env", lambda: _Failing())
+    with pytest.raises(RuntimeError):
+        runner.run(cell, 60)
+
+    assert [event.type for event in cell.events()] == ["start", "stop"]

@@ -79,7 +79,17 @@ def frame(histories: list[History]) -> pd.DataFrame:
     rows: list[dict[str, object]] = []
     for metric, _ in METRICS:
         for flow in sorted({history.flow for history in histories}):
-            group = [history for history in histories if history.flow == flow]
+            group = [
+                history
+                for history in histories
+                if history.flow == flow
+                # A cell that improved while reporting nothing on this axis has
+                # no curve here, only a point at the origin that would drag the
+                # mean of the seeds that do report.
+                and not (getattr(history.end, metric) == 0 and len(history.points) > 1)
+            ]
+            if not group:
+                continue
             grid = sorted(
                 {
                     getattr(point, metric)

@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 
 import docker
-from docker.errors import ImageNotFound, NotFound
+from docker.errors import APIError, ImageNotFound
 
 from stupidbench.cell import (
     BUDGET_SECONDS,
@@ -72,7 +72,9 @@ TICK_SECONDS = 30
 #: Where the key is redeemed. A coding-plan key and a platform key are taken
 #: at different endpoints, and which one a runner holds is not knowable from
 #: here, so a repository variable can say.
-KIMI_BASE_URL = os.environ.get("KIMI_MODEL_BASE_URL", "https://api.kimi.com/coding/v1")
+KIMI_BASE_URL = (
+    os.environ.get("KIMI_MODEL_BASE_URL") or "https://api.kimi.com/coding/v1"
+)
 
 _KIMI_ENVIRONMENT = {
     "KIMI_MODEL_PROVIDER_TYPE": "kimi",
@@ -188,6 +190,10 @@ def run(cell: Cell, seconds: int) -> str:
         network.remove()
     containers = []
     networks = []
+    # Only a start can be stopped. A segment that fails while setting up has
+    # run for no time at all, and an unpaired stop would charge the cell for
+    # every hour since the segment before it.
+    started = False
     try:
         internal = client.networks.create(
             f"{name}-internal",
@@ -272,19 +278,21 @@ def run(cell: Cell, seconds: int) -> str:
         containers.append(agent)
         agent.start()
         cell.record("start")
+        started = True
         _watch(cell, agent, limit)
         (cell.cell_dir / "agent.log").write_bytes(agent.logs(tail=400))
     finally:
-        cell.record("stop")
+        if started:
+            cell.record("stop")
         for container in reversed(containers):
             try:
                 container.remove(force=True, v=True)
-            except NotFound:
+            except APIError:
                 pass
         for network in networks:
             try:
                 network.remove()
-            except NotFound:
+            except APIError:
                 pass
         shutil.rmtree(proxy_dir, ignore_errors=True)
     return "ran"

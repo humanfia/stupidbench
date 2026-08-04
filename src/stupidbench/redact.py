@@ -22,6 +22,9 @@ from stupidbench.cell import TOKEN_VARIABLES
 CREDENTIAL_NAMES = (
     ".claude.json",
     ".credentials.json",
+    # An agent that commits its work commits whatever its work contains, and a
+    # token deflated inside a git object matches no search of the text.
+    ".git",
     "auth.json",
     "credentials",
     "oauth",
@@ -62,7 +65,12 @@ def redact(root: Path, values: Iterable[str]) -> tuple[int, int]:
     deleted = 0
     for path in sorted(root.rglob("*"), reverse=True):
         if path.name in CREDENTIAL_NAMES:
-            shutil.rmtree(path, ignore_errors=True) if path.is_dir() else path.unlink()
+            # Never followed: a symlink is unlinked, not walked into. A failure
+            # here raises, which is what closes the gate on publishing.
+            if path.is_symlink() or not path.is_dir():
+                path.unlink(missing_ok=True)
+            else:
+                shutil.rmtree(path)
             deleted += 1
     rewritten = 0
     for path in sorted(root.rglob("*")):

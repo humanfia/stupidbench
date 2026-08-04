@@ -84,3 +84,38 @@ def test_secrets_are_read_from_the_environment_longest_first(
     monkeypatch.setenv("KIMI_MODEL_API_KEY", "   ")
 
     assert secrets() == ["a-much-longer-token", "short"]
+
+
+def test_redact_removes_a_repository_a_token_could_be_committed_into(
+    tmp_path: Path,
+) -> None:
+    # A token deflated inside a git object matches no search of the text, so
+    # the container goes rather than being searched.
+    objects = tmp_path / "cell/agent/.git/objects/ab"
+    objects.mkdir(parents=True)
+    (objects / "cdef").write_bytes(b"\x78\x9c\x00compressed-secret-token")
+    (tmp_path / "cell/agent/work.py").write_text("# work\n", encoding="utf-8")
+
+    deleted, _ = redact(tmp_path, ["secret-token"])
+
+    assert deleted == 1
+    assert not (tmp_path / "cell/agent/.git").exists()
+    assert (tmp_path / "cell/agent/work.py").is_file()
+
+
+def test_redact_unlinks_a_symlinked_credential_store_without_following_it(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "elsewhere"
+    target.mkdir()
+    (target / "token").write_text("secret-token", encoding="utf-8")
+    state = tmp_path / "cell/agent/.stupidbench/claude"
+    state.mkdir(parents=True)
+    (state / "credentials").symlink_to(target)
+
+    deleted, _ = redact(tmp_path / "cell", ["secret-token"])
+
+    # The link is gone and counted; what it pointed at was never walked into.
+    assert deleted == 1
+    assert not (state / "credentials").is_symlink()
+    assert (target / "token").read_text() == "secret-token"
