@@ -136,13 +136,17 @@ def plot(curves: pd.DataFrame, path: Path) -> None:
     plt.close(figure)
 
 
-def markdown(histories: list[History], image: str) -> str:
-    """The report a run leaves in its job summary."""
+def markdown(histories: list[History], curves_name: str) -> str:
+    """The report a run leaves in its job summary.
+
+    A job summary resolves no relative path, so the curves are named rather
+    than shown: they are in the artifact this run publishes beside it.
+    """
     stamp = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
     lines = [
         f"# stupid bench — {stamp}",
         "",
-        f"![curves]({image})",
+        f"Curves are in `{curves_name}`, in the **report** artifact of this run.",
         "",
         "## By flow",
         "",

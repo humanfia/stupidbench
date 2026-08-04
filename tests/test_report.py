@@ -94,7 +94,7 @@ def test_report_draws_the_curves_and_writes_the_summary(tmp_path: Path) -> None:
     assert (out / "curves.csv").is_file()
     assert (out / "report.md").read_text() == text
     assert "| `gpt56sol_max` | 2 | 100,000 | 105,000 |" in text
-    assert "![curves](curves.png)" in text
+    assert "curves.png" in text
 
 
 def test_report_says_so_when_nothing_has_run(tmp_path: Path) -> None:

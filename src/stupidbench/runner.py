@@ -64,8 +64,12 @@ TICK_SECONDS = 30
 #: disk; the managed provider it would otherwise use needs an interactive login
 #: that a runner cannot give it. The default capabilities leave out tool use,
 #: which an agent cannot work without.
+#: Where the key is redeemed. A coding-plan key and a platform key are taken
+#: at different endpoints, and which one a runner holds is not knowable from
+#: here, so a repository variable can say.
+KIMI_BASE_URL = os.environ.get("KIMI_MODEL_BASE_URL", "https://api.kimi.com/coding/v1")
+
 _KIMI_ENVIRONMENT = {
-    "KIMI_MODEL_BASE_URL": "https://api.kimi.com/coding/v1",
     "KIMI_MODEL_PROVIDER_TYPE": "kimi",
     "KIMI_MODEL_MAX_CONTEXT_SIZE": "1048576",
     "KIMI_MODEL_CAPABILITIES": "thinking,always_thinking,image_in,tool_use",
@@ -149,6 +153,10 @@ def run(cell: Cell, seconds: int) -> str:
     Returns what became of it: "done" when the budget is spent, "ran" when the
     segment carried it further.
     """
+    if not (cell.agent_dir / ".stupidbench/run.sh").is_file():
+        # Docker would make the missing mount point itself, owned by root, and
+        # the cell would be unusable from then on.
+        raise RuntimeError(f"{cell.flow}/{cell.seed} has not been staged")
     remaining = BUDGET_SECONDS - cell.elapsed
     if remaining <= 0:
         return "done"
@@ -166,6 +174,13 @@ def run(cell: Cell, seconds: int) -> str:
     config_path.write_text(_proxy_config(), encoding="utf-8")
     config_path.chmod(0o444)
     name = f"stupidbench-{cell.flow}-{cell.seed}"
+    # A segment that died without cleaning up leaves containers holding the
+    # names this one needs, and creating them again would fail. The cell's own
+    # names are its to reclaim.
+    for container in client.containers.list(all=True, filters={"name": name}):
+        container.remove(force=True, v=True)
+    for network in client.networks.list(names=[f"{name}-internal", f"{name}-egress"]):
+        network.remove()
     containers = []
     networks = []
     try:
@@ -316,6 +331,7 @@ def _agent_environment(tool: Tool, model: str, effort: str) -> dict[str, str]:
         environment[TOKEN_VARIABLES[tool]] = token
     if tool == "kimi":
         environment |= _KIMI_ENVIRONMENT | {
+            "KIMI_MODEL_BASE_URL": KIMI_BASE_URL,
             "KIMI_MODEL_NAME": model.rpartition("/")[2],
             "KIMI_MODEL_THINKING_EFFORT": effort,
         }

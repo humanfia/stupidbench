@@ -114,3 +114,12 @@ def test_proxy_config_allows_the_providers_and_nothing_else() -> None:
     assert len(allow) == 1
     assert allow[0].endswith("443 HTTPS")
     assert config.index(allow[0]) < config.index("deny *")
+
+
+def test_run_refuses_a_cell_that_was_never_staged(tmp_path: Path) -> None:
+    # Docker would create the missing mount point as root and leave the cell
+    # unusable, so this must fail before any container is made.
+    cell = Cell("opus5_max", 0, tmp_path / "never-staged")
+
+    with pytest.raises(RuntimeError, match="has not been staged"):
+        runner.run(cell, 60)
