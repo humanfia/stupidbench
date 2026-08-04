@@ -1,0 +1,40 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v5
+
+      - run: uvx ruff format --check .
+      - run: uvx ruff check .
+
+      # A pull request from a fork cannot read the package, and the isolation
+      # tests need the image a cell runs in. They skip themselves without it.
+      - name: Fetch the image a cell runs in
+        if: github.event_name != 'pull_request'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          image=ghcr.io/${{ github.repository }}:runtime
+          docker pull "$image" && docker tag "$image" stupidbench-runtime:local
+
+      - run: uv run pytest -q

@@ -1,0 +1,151 @@
+name: stupid bench
+
+# One cell — one flow, one seed — per job, because a hosted runner fits exactly
+# one: the agent alone asks for 6 GB of the 16 GB the runner has.
+#
+# A cell is budgeted at twenty-four hours of agent time and a hosted job is
+# capped at six, so no single job can hold it. The schedule is what spans it:
+# the same job starts every six hours, restores the cell the last one left in
+# the cache, and carries it further. Only the time a cell actually ran counts
+# against its budget, so the waiting between jobs is free, and a job that finds
+# the budget spent has nothing to do and says so.
+
+on:
+  schedule:
+    - cron: "0 0,6,12,18 * * 0,1"
+  workflow_dispatch:
+
+# Never two jobs over one cache lineage: a later start waits rather than
+# replacing the one running.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+# This repository is public, and only these two events can carry a secret: no
+# pull request runs this, so nothing a stranger can open ever sees a token.
+permissions:
+  contents: read
+
+env:
+  STUPIDBENCH_IMAGE: ghcr.io/${{ github.repository }}:runtime
+
+jobs:
+  segment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        flow:
+          - gpt56sol_max
+          - gpt56terra_max
+          - gpt56luna_max
+          - opus5_max
+          - k3_max
+        seed: [0, 1, 2]
+    env:
+      # Short of the six-hour job cap by enough to save and publish the cell.
+      SEGMENT_SECONDS: "19800"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v5
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The whole cell, sessions included: they are what the next segment adds
+      # to, what the spend is summed over, and what the run is read from. The
+      # credentials are the one thing that never travels with it.
+      - name: Restore what the last segment left
+        uses: actions/cache/restore@v4
+        with:
+          path: cells
+          key: cell-${{ matrix.flow }}-${{ matrix.seed }}-${{ github.run_id }}
+          restore-keys: cell-${{ matrix.flow }}-${{ matrix.seed }}-
+
+      # Staging skips a cell the cache already carries, so this both starts the
+      # first segment and is a no-op for every one after it.
+      - name: Stage the cell
+        run: uv run stupidbench prepare --flow ${{ matrix.flow }} --seed ${{ matrix.seed }}
+
+      - name: Run the segment
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          CODEX_ACCESS_TOKEN: ${{ secrets.CODEX_ACCESS_TOKEN }}
+          KIMI_MODEL_API_KEY: ${{ secrets.KIMI_MODEL_API_KEY }}
+        run: |
+          uv run stupidbench run \
+            --flow ${{ matrix.flow }} \
+            --seed ${{ matrix.seed }} \
+            --seconds "$SEGMENT_SECONDS"
+
+      # Everything below leaves the runner into a public artifact or a public
+      # cache, so nothing below runs until this has: it deletes what a CLI
+      # stores credentials in and replaces every occurrence of a live token, or
+      # of anything shaped like one, wherever an agent happened to write it.
+      - name: Take the credentials back out
+        id: redact
+        if: always()
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          CODEX_ACCESS_TOKEN: ${{ secrets.CODEX_ACCESS_TOKEN }}
+          KIMI_MODEL_API_KEY: ${{ secrets.KIMI_MODEL_API_KEY }}
+        run: uv run stupidbench redact
+
+      - name: Hand the cell to the next segment
+        if: always() && steps.redact.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: cells
+          key: cell-${{ matrix.flow }}-${{ matrix.seed }}-${{ github.run_id }}
+
+      # Every segment publishes the cell as it then stands, so the artifact of
+      # the last one holds the whole run: every session the agent kept, every
+      # score and event, and the work it leaves behind.
+      - name: Publish the cell
+        if: always() && steps.redact.outcome == 'success'
+        uses: actions/upload-artifact@v7
+        with:
+          name: cell-${{ matrix.flow }}-${{ matrix.seed }}
+          path: cells
+          include-hidden-files: true
+          if-no-files-found: ignore
+          overwrite: true
+          retention-days: 30
+
+  # A segment knows one cell; the report reads them together, so that the seeds
+  # of a flow can be averaged into one curve.
+  report:
+    needs: segment
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v5
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: cell-*
+          merge-multiple: true
+          path: cells
+
+      - name: Draw the curves
+        run: uv run stupidbench report --out report > /dev/null
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: report
+          path: report
+          retention-days: 90
+
+      - name: Write the summary
+        run: cat report/report.md >> "$GITHUB_STEP_SUMMARY"
