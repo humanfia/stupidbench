@@ -18,7 +18,7 @@ from stupidbench.redact import redact
 from stupidbench.report import read_history
 from stupidbench.usage import Tier
 
-IMAGE = "stupidbench-runtime:local"
+IMAGE = "ghcr.io/humanfia/flowbench-runtime:latest"
 
 
 def _docker_ready() -> bool:

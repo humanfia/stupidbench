@@ -23,9 +23,11 @@ Actions: nothing is set up by hand, and every run publishes what its agents did.
 uv sync
 ```
 
-Cells run in Docker, so a host needs Docker Engine 28 or newer. Each cell is
-given the token of the CLI it runs — `CLAUDE_CODE_OAUTH_TOKEN`,
-`CODEX_ACCESS_TOKEN` or `KIMI_MODEL_API_KEY` — from the environment.
+Cells run in Docker, so a host needs Docker Engine 28 or newer. The image a
+cell runs in is `ghcr.io/humanfia/flowbench-runtime`, by the variant its task
+calls for; it is public and nothing here builds it. Each cell is given the token
+of the CLI it runs — `CLAUDE_CODE_OAUTH_TOKEN`, `CODEX_ACCESS_TOKEN` or
+`KIMI_MODEL_API_KEY` — from the environment.
 
 ## Usage
 

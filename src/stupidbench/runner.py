@@ -29,8 +29,13 @@ from stupidbench.cell import (
 
 TASK_DIR = Path(__file__).resolve().parent / "task"
 
-#: The image a cell runs in, overridable so a test can point at a local build.
-IMAGE = os.environ.get("STUPIDBENCH_IMAGE", "ghcr.io/humanfia/stupidbench:runtime")
+#: A cell runs in a flowbench runtime image, by the variant its task calls for
+#: — `latest` is the one aopt is built and scored against. The package is
+#: public, so pulling it needs no credential. Both parts are overridable, so a
+#: task that needs another variant, or a test that has a local build, can say.
+RUNTIME_REPOSITORY = "ghcr.io/humanfia/flowbench-runtime"
+RUNTIME_VARIANT = os.environ.get("STUPIDBENCH_VARIANT", "latest")
+IMAGE = os.environ.get("STUPIDBENCH_IMAGE", f"{RUNTIME_REPOSITORY}:{RUNTIME_VARIANT}")
 PROXY_IMAGE = (
     "docker.io/3proxy/3proxy:0.9.7.busybox"
     "@sha256:8b38b23ab45e1b038e620c2e507994af801df2ca7dc78f9279367b1c89f68cd8"
