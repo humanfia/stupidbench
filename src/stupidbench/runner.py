@@ -83,7 +83,9 @@ _KIMI_ENVIRONMENT = {
     "KIMI_MODEL_CAPABILITIES": "thinking,always_thinking,image_in,tool_use",
 }
 
-_RUN_SCRIPTS: dict[Tool, str] = {
+#: The turn that starts a session, per CLI. Every flow takes one of these
+#: first, because there is nothing yet to resume.
+_START: dict[Tool, str] = {
     "codex": """codex exec \\
         --dangerously-bypass-approvals-and-sandbox \\
         --skip-git-repo-check \\
@@ -107,6 +109,38 @@ _RUN_SCRIPTS: dict[Tool, str] = {
     "kimi": """kimi --prompt "$(cat .stupidbench/task.md)" || true""",
 }
 
+#: The turn that carries the session before it on, for the flows that loop that
+#: way. The task is sent again every turn either way: what differs is whether
+#: the agent meets it with the context it built or with a fresh one.
+_RESUME: dict[Tool, str] = {
+    "codex": """codex exec resume --last \\
+        -c sandbox_mode="danger-full-access" \\
+        --skip-git-repo-check \\
+        -c "model=\\"$MODEL\\"" \\
+        -c "model_reasoning_effort=\\"$EFFORT\\"" \\
+        -c 'service_tier="default"' \\
+        - < .stupidbench/task.md || true""",
+    "claude": """rm -f "$CLAUDE_CONFIG_DIR/remote-settings.json"
+    claude --print \\
+        --continue \\
+        --dangerously-skip-permissions \\
+        --model "$MODEL" \\
+        --effort "$EFFORT" \\
+        < .stupidbench/task.md || true""",
+    "kimi": """kimi --continue \\
+        --prompt "$(cat .stupidbench/task.md)" || true""",
+}
+
+#: Where a CLI leaves the session a later turn resumes, under the state
+#: directory the cell gives it. A stateful flow asks this rather than counting
+#: turns, because a segment that restarts must carry the cell on rather than
+#: begin it again — the sessions come back from the cache with everything else.
+_SESSIONS: dict[Tool, str] = {
+    "codex": "$CODEX_HOME/sessions/*/*/*/rollout-*.jsonl",
+    "claude": "$CLAUDE_CONFIG_DIR/projects/*/*.jsonl",
+    "kimi": "$KIMI_CODE_HOME/sessions/*/session_*",
+}
+
 
 def prepare(cell: Cell) -> None:
     """Stages the cell, or leaves alone one a previous segment already staged.
@@ -119,12 +153,26 @@ def prepare(cell: Cell) -> None:
     flow = FLOWS[cell.flow]
     agent = cell.agent_dir
     (agent / ".stupidbench").mkdir(parents=True, exist_ok=True)
+    opening = ""
+    turn = _START[flow.tool]
+    if flow.loop == "stateful":
+        # There is nothing to resume until something has run, and a segment that
+        # restarts must not send the task as a new session when the cache
+        # brought one back. What the CLI left behind is what says which it is.
+        opening = (
+            f'if ! compgen -G "{_SESSIONS[flow.tool]}" > /dev/null; then\n'
+            f"    {_START[flow.tool]}\n"
+            "    sleep 5\n"
+            "fi\n\n"
+        )
+        turn = _RESUME[flow.tool]
     (agent / ".stupidbench/run.sh").write_text(
         "#!/bin/bash\n\n"
         f'export MODEL="{flow.model}"\n'
         f'export EFFORT="{flow.effort}"\n\n'
+        f"{opening}"
         "while true; do\n"
-        f"    {_RUN_SCRIPTS[flow.tool]}\n"
+        f"    {turn}\n"
         "    sleep 5\n"
         "done\n",
         encoding="utf-8",

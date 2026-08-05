@@ -36,11 +36,16 @@ jobs:
       fail-fast: false
       matrix:
         flow:
-          - gpt56sol_max
-          - gpt56terra_max
-          - gpt56luna_max
-          - opus5_max
-          - k3_max
+          - gpt56sol_max_ralph
+          - gpt56sol_max_stateful
+          - gpt56terra_max_ralph
+          - gpt56terra_max_stateful
+          - gpt56luna_max_ralph
+          - gpt56luna_max_stateful
+          - opus5_max_ralph
+          - opus5_max_stateful
+          - k3_max_ralph
+          - k3_max_stateful
         seed: [0, 1, 2]
     env:
       # Short of the six-hour job cap by enough to pull a sixteen-gigabyte image

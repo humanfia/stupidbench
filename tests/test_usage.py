@@ -20,6 +20,8 @@ PRICES = {
             },
         )
     ],
+    # What OpenRouter calls the model Kimi Code names `kimi-code/k3`.
+    "kimi-k3": [Tier(0, {"prompt": 3.0, "completion": 15.0, "input_cache_read": 0.3})],
 }
 
 
@@ -28,7 +30,7 @@ def _codex_rows(rows: list[dict]) -> str:
 
 
 def test_codex_usage_is_priced_per_tier_and_ordered(tmp_path: Path) -> None:
-    cell = Cell("gpt56sol_max", 0, tmp_path / "cell")
+    cell = Cell("gpt56sol_max_ralph", 0, tmp_path / "cell")
     sessions = cell.state_dir / "sessions" / "2026" / "08"
     sessions.mkdir(parents=True)
     (sessions / "rollout.jsonl").write_text(
@@ -84,7 +86,7 @@ def test_codex_usage_is_priced_per_tier_and_ordered(tmp_path: Path) -> None:
 
 
 def test_claude_usage_counts_each_message_once(tmp_path: Path) -> None:
-    cell = Cell("opus5_max", 0, tmp_path / "cell")
+    cell = Cell("opus5_max_ralph", 0, tmp_path / "cell")
     projects = cell.state_dir / "projects" / "-workspace"
     projects.mkdir(parents=True)
     message = {
@@ -125,15 +127,74 @@ def test_claude_usage_counts_each_message_once(tmp_path: Path) -> None:
     assert spent[0].cost == 10 * 3.0 + 100 * 0.3 + 20 * 3.75 + 5 * 30.0
 
 
-def test_kimi_reports_no_usage(tmp_path: Path) -> None:
-    cell = Cell("k3_max", 0, tmp_path / "cell")
-    (cell.state_dir / "sessions").mkdir(parents=True)
+def test_kimi_usage_is_read_off_the_wire_and_priced(tmp_path: Path) -> None:
+    # Kimi Code writes no usage into its session; the count is in the wire log,
+    # in milliseconds, against a model name the environment stood in for.
+    cell = Cell("k3_max_ralph", 0, tmp_path / "cell")
+    wire = cell.state_dir / "sessions/wd_workspace_ab/session_cd/agents/main"
+    wire.mkdir(parents=True)
+    (wire / "wire.jsonl").write_text(
+        _codex_rows(
+            [
+                {
+                    "type": "usage.record",
+                    "model": "__kimi_env_model__",
+                    "usage": {
+                        "inputOther": 2208,
+                        "output": 145,
+                        "inputCacheRead": 18688,
+                        "inputCacheCreation": 0,
+                    },
+                    "usageScope": "turn",
+                    "time": 1785892010229,
+                },
+                # A wider scope is the same tokens summed again.
+                {
+                    "type": "usage.record",
+                    "model": "__kimi_env_model__",
+                    "usage": {"inputOther": 99, "output": 99, "inputCacheRead": 0},
+                    "usageScope": "session",
+                    "time": 1785892010230,
+                },
+                {"type": "llm.request", "time": 1785892010231},
+            ]
+        ),
+        encoding="utf-8",
+    )
 
-    assert usages(cell, PRICES) == []
+    spent = usages(cell, PRICES)
+
+    assert len(spent) == 1
+    assert spent[0].output_tokens == 145
+    assert spent[0].timestamp == 1785892010.229
+    assert spent[0].cost == 2208 * 3.0 + 18688 * 0.3 + 145 * 15.0
+
+
+def test_kimi_counts_tokens_even_where_it_cannot_price_them(tmp_path: Path) -> None:
+    cell = Cell("k3_max_ralph", 1, tmp_path / "cell")
+    wire = cell.state_dir / "sessions/wd/session_x/agents/main"
+    wire.mkdir(parents=True)
+    (wire / "wire.jsonl").write_text(
+        _codex_rows(
+            [
+                {
+                    "type": "usage.record",
+                    "usage": {"inputOther": 10, "output": 7},
+                    "usageScope": "turn",
+                    "time": 1785892010229,
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    spent = usages(cell, {})
+
+    assert (spent[0].output_tokens, spent[0].cost) == (7, 0.0)
 
 
 def test_an_unpriced_model_still_counts_its_tokens(tmp_path: Path) -> None:
-    cell = Cell("gpt56sol_max", 0, tmp_path / "cell")
+    cell = Cell("gpt56sol_max_ralph", 0, tmp_path / "cell")
     sessions = cell.state_dir / "sessions"
     sessions.mkdir(parents=True)
     (sessions / "rollout.jsonl").write_text(

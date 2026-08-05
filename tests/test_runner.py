@@ -35,7 +35,7 @@ def test_prepare_stages_a_runnable_cell(tmp_path: Path, flow: str) -> None:
 
 
 def test_prepare_leaves_a_staged_cell_alone(tmp_path: Path) -> None:
-    cell = Cell("opus5_max", 1, tmp_path / "cell")
+    cell = Cell("opus5_max_ralph", 1, tmp_path / "cell")
     runner.prepare(cell)
     kernel = cell.agent_dir / "perf_takehome.py"
     kernel.write_text("# the agent's own work\n", encoding="utf-8")
@@ -51,7 +51,7 @@ def test_prepare_rewrites_the_run_script_of_a_cell_already_in_flight(
     # A cell is carried for twenty-four hours over as many segments as that
     # takes, so a fix to what it runs has to reach the cell already running the
     # old one rather than only the next cell staged.
-    cell = Cell("opus5_max", 1, tmp_path / "cell")
+    cell = Cell("opus5_max_ralph", 1, tmp_path / "cell")
     runner.prepare(cell)
     cell.record("start")
     script = cell.agent_dir / ".stupidbench/run.sh"
@@ -66,7 +66,7 @@ def test_prepare_starts_claude_without_the_settings_it_cached(tmp_path: Path) ->
     # The copy claude keeps of what its provider hands down turns off the mode
     # the cell runs in, and the segment that restored one had every command the
     # agent tried come back needing an approval nobody was there to give.
-    cell = Cell("opus5_max", 0, tmp_path / "claude")
+    cell = Cell("opus5_max_ralph", 0, tmp_path / "claude")
 
     runner.prepare(cell)
 
@@ -75,11 +75,52 @@ def test_prepare_starts_claude_without_the_settings_it_cached(tmp_path: Path) ->
     assert script.index("remote-settings.json") < script.index("claude --print")
 
 
+@pytest.mark.parametrize(
+    ("flow", "resumes"),
+    (
+        ("gpt56sol_max_stateful", "codex exec resume --last"),
+        ("opus5_max_stateful", "--continue"),
+        ("k3_max_stateful", "kimi --continue"),
+    ),
+)
+def test_a_stateful_flow_resumes_the_session_it_left(
+    tmp_path: Path, flow: str, resumes: str
+) -> None:
+    # Both loops send the task every turn. What a stateful one adds is the
+    # context the turn before it built, and the one thing it must not do is
+    # start that context again when a segment restarts, so the loop it enters is
+    # the resuming one and the opening turn is guarded by whether a session is
+    # already there to resume.
+    cell = Cell(flow, 0, tmp_path / flow)
+
+    runner.prepare(cell)
+
+    script = (cell.agent_dir / ".stupidbench/run.sh").read_text()
+    opening, _, loop = script.partition("while true; do")
+    assert "compgen -G" in opening
+    assert resumes in loop
+    assert resumes not in opening
+
+
+@pytest.mark.parametrize("flow", ("gpt56sol_max_ralph", "opus5_max_ralph"))
+def test_a_ralph_flow_meets_the_task_with_nothing_but_what_it_wrote(
+    tmp_path: Path, flow: str
+) -> None:
+    cell = Cell(flow, 0, tmp_path / flow)
+
+    runner.prepare(cell)
+
+    script = (cell.agent_dir / ".stupidbench/run.sh").read_text()
+    assert "compgen -G" not in script
+    assert "--continue" not in script
+    assert "resume" not in script
+
+
 def test_prepare_denies_the_web_tools_a_cli_reaches_through_its_provider(
     tmp_path: Path,
 ) -> None:
-    claude = Cell("opus5_max", 0, tmp_path / "claude")
-    codex = Cell("gpt56sol_max", 0, tmp_path / "codex")
+    claude = Cell("opus5_max_ralph", 0, tmp_path / "claude")
+    codex = Cell("gpt56sol_max_ralph", 0, tmp_path / "codex")
     runner.prepare(claude)
     runner.prepare(codex)
 
@@ -164,7 +205,7 @@ def test_proxy_config_denies_a_host_without_ever_looking_it_up() -> None:
 def test_run_refuses_a_cell_that_was_never_staged(tmp_path: Path) -> None:
     # Docker would create the missing mount point as root and leave the cell
     # unusable, so this must fail before any container is made.
-    cell = Cell("opus5_max", 0, tmp_path / "never-staged")
+    cell = Cell("opus5_max_ralph", 0, tmp_path / "never-staged")
 
     with pytest.raises(RuntimeError, match="has not been staged"):
         runner.run(cell, 60)
@@ -175,7 +216,7 @@ def test_a_segment_that_never_started_records_no_stop(
 ) -> None:
     # An unpaired stop would charge the cell for every hour since the segment
     # before it, and enough of those would retire the cell with budget unspent.
-    cell = Cell("opus5_max", 0, tmp_path / "cell")
+    cell = Cell("opus5_max_ralph", 0, tmp_path / "cell")
     runner.prepare(cell)
     cell.record("start")
     cell.record("stop")

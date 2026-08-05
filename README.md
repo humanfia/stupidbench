@@ -39,19 +39,23 @@ it early from the Actions tab.
 The same four commands work on any host:
 
 ```sh
-stupidbench prepare --flow opus5_max --seed 0   # stage one cell
-stupidbench run --flow opus5_max --seed 0 --seconds 3600
-stupidbench redact                              # take every credential back out
-stupidbench report --out report                 # draw the curves, write the report
+stupidbench prepare --flow opus5_max_ralph --seed 0  # stage one cell
+stupidbench run --flow opus5_max_ralph --seed 0 --seconds 3600
+stupidbench redact           # take every credential back out
+stupidbench report --out report  # draw the curves, write the report
 ```
 
 `prepare` leaves the work of a cell that is already staged alone and `run` picks
-a cell up where it was left, so repeating either continues rather than restarts. A cell is done
-when it has spent its twenty-four hours of agent time; time between runs is not
-charged to it.
+a cell up where it was left, so repeating either continues rather than restarts.
+A cell is done when it has spent its twenty-four hours of agent time; time
+between runs is not charged to it.
 
-Flows are `gpt56sol_max`, `gpt56terra_max`, `gpt56luna_max`, `opus5_max` and
-`k3_max`; seeds are 0, 1 and 2.
+A flow is a model, an effort and a loop. The models are `gpt56sol`,
+`gpt56terra`, `gpt56luna`, `opus5` and `k3`, all at `max`; the loop is either
+`ralph`, which meets the task with a new session every turn, or `stateful`,
+which resumes the session it left and is sent the task again. That makes flows
+like `opus5_max_ralph` and `opus5_max_stateful`, ten in all, each run on the
+three seeds 0, 1 and 2.
 
 ## Results
 

@@ -188,8 +188,9 @@ def markdown(histories: list[History], curves_name: str) -> str:
             f"{history.end.output_tokens:,} | {history.end.hours:,.1f} |"
         )
     footnote = (
-        f"Starting score is {INIT_SCORE:,}, and lower is better. A k3 cell "
-        "reports no tokens or cost: Kimi Code keeps no usage in its sessions."
+        f"Starting score is {INIT_SCORE:,}, and lower is better. A `ralph` flow "
+        "meets the task with a new session every turn; a `stateful` one resumes "
+        "the session it left and is sent the task again."
     )
     lines += ["", footnote, ""]
     return "\n".join(lines)

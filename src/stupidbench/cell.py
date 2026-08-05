@@ -40,21 +40,35 @@ TOKEN_VARIABLES: dict[Tool, str] = {
 }
 
 
+#: How a segment keeps the agent going once a turn ends. Ralph starts a new
+#: session every turn, so the agent meets the task with only what it left on
+#: disk; stateful resumes the session it left and sends the task again, so it
+#: meets the task with the context it has been building as well. A long horizon
+#: is what the two disagree about, which is why the bench runs both.
+Loop = Literal["ralph", "stateful"]
+
+
 @dataclass(frozen=True)
 class Flow:
-    """One column of the matrix: a CLI, the model it runs, and how hard."""
+    """One column of the matrix: a CLI, a model, how hard, and how it loops."""
 
     tool: Tool
     model: str
     effort: str
+    loop: Loop
 
 
 FLOWS: dict[str, Flow] = {
-    "gpt56sol_max": Flow("codex", "gpt-5.6-sol", "max"),
-    "gpt56terra_max": Flow("codex", "gpt-5.6-terra", "max"),
-    "gpt56luna_max": Flow("codex", "gpt-5.6-luna", "max"),
-    "opus5_max": Flow("claude", "claude-opus-5", "max"),
-    "k3_max": Flow("kimi", "kimi-code/k3", "max"),
+    "gpt56sol_max_ralph": Flow("codex", "gpt-5.6-sol", "max", "ralph"),
+    "gpt56sol_max_stateful": Flow("codex", "gpt-5.6-sol", "max", "stateful"),
+    "gpt56terra_max_ralph": Flow("codex", "gpt-5.6-terra", "max", "ralph"),
+    "gpt56terra_max_stateful": Flow("codex", "gpt-5.6-terra", "max", "stateful"),
+    "gpt56luna_max_ralph": Flow("codex", "gpt-5.6-luna", "max", "ralph"),
+    "gpt56luna_max_stateful": Flow("codex", "gpt-5.6-luna", "max", "stateful"),
+    "opus5_max_ralph": Flow("claude", "claude-opus-5", "max", "ralph"),
+    "opus5_max_stateful": Flow("claude", "claude-opus-5", "max", "stateful"),
+    "k3_max_ralph": Flow("kimi", "kimi-code/k3", "max", "ralph"),
+    "k3_max_stateful": Flow("kimi", "kimi-code/k3", "max", "stateful"),
 }
 
 SEEDS = (0, 1, 2)

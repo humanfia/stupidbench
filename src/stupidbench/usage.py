@@ -70,15 +70,13 @@ def pricing() -> Pricing:
 
 def usages(cell: Cell, prices: Pricing) -> list[Usage]:
     """Everything the cell's CLI recorded spending, in order."""
-    tool = FLOWS[cell.flow].tool
-    if tool == "codex":
+    flow = FLOWS[cell.flow]
+    if flow.tool == "codex":
         found = _codex_usages(cell.state_dir / "sessions", prices)
-    elif tool == "claude":
+    elif flow.tool == "claude":
         found = _claude_usages(cell.state_dir / "projects", prices)
     else:
-        # Kimi Code keeps no token count in its sessions, so a k3 cell is read
-        # for its scores and its clock alone.
-        found = []
+        found = _kimi_usages(cell.state_dir / "sessions", prices, flow.model)
     return sorted(found, key=lambda usage: usage.timestamp)
 
 
@@ -131,6 +129,40 @@ def _codex_usages(sessions_dir: Path, prices: Pricing) -> list[Usage]:
                     output_tokens,
                     (input_tokens - cached) * rates.get("prompt", 0.0)
                     + cached * rates.get("input_cache_read", 0.0)
+                    + output_tokens * rates.get("completion", 0.0),
+                )
+            )
+    return found
+
+
+def _kimi_usages(sessions_dir: Path, prices: Pricing, model: str) -> list[Usage]:
+    # Kimi Code keeps its count on the wire rather than in the session, and
+    # records the model it ran as the placeholder the environment filled in, so
+    # what the tokens are worth is priced from the flow instead. The two name
+    # the same model differently: the CLI takes the family from its own
+    # provider, OpenRouter carries it in the identifier.
+    model = f"kimi-{model.rpartition('/')[2]}"
+    found: list[Usage] = []
+    for path in sorted(sessions_dir.rglob("wire.jsonl")):
+        for row in read_jsonl(path):
+            # A turn is what an exchange costs. Any wider scope the CLI records
+            # is the same tokens summed again.
+            if row.get("type") != "usage.record" or row.get("usageScope") != "turn":
+                continue
+            usage = row["usage"]
+            input_tokens = usage.get("inputOther", 0)
+            cache_read = usage.get("inputCacheRead", 0)
+            cache_write = usage.get("inputCacheCreation", 0)
+            output_tokens = usage.get("output", 0)
+            rates = _rates(prices, model, input_tokens + cache_read + cache_write)
+            found.append(
+                Usage(
+                    # Milliseconds, where every other clock in a cell is seconds.
+                    row["time"] / 1000,
+                    output_tokens,
+                    input_tokens * rates.get("prompt", 0.0)
+                    + cache_read * rates.get("input_cache_read", 0.0)
+                    + cache_write * rates.get("input_cache_write", 0.0)
                     + output_tokens * rates.get("completion", 0.0),
                 )
             )

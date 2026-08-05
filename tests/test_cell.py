@@ -1,7 +1,15 @@
 import json
 from pathlib import Path
 
-from stupidbench.cell import BUDGET_SECONDS, Cell, Event, elapsed_at, timestamp
+from stupidbench.cell import (
+    BUDGET_SECONDS,
+    FLOWS,
+    SEEDS,
+    Cell,
+    Event,
+    elapsed_at,
+    timestamp,
+)
 
 
 def write_events(cell: Cell, events: list[tuple[str, str]]) -> None:
@@ -40,7 +48,7 @@ def test_elapsed_at_stops_at_the_moment_asked_about() -> None:
 
 
 def test_state_follows_the_budget(tmp_path: Path) -> None:
-    cell = Cell("opus5_max", 0, tmp_path / "cell")
+    cell = Cell("opus5_max_ralph", 0, tmp_path / "cell")
     assert cell.state == "pending"
 
     write_events(
@@ -59,7 +67,7 @@ def test_state_follows_the_budget(tmp_path: Path) -> None:
 
 
 def test_records_events_and_reads_scores_in_order(tmp_path: Path) -> None:
-    cell = Cell("k3_max", 2, tmp_path / "cell")
+    cell = Cell("k3_max_ralph", 2, tmp_path / "cell")
     cell.record("start")
     cell.record("stop")
     assert [event.type for event in cell.events()] == ["start", "stop"]
@@ -82,5 +90,8 @@ def test_records_events_and_reads_scores_in_order(tmp_path: Path) -> None:
 
 def test_all_cells_cover_the_matrix(tmp_path: Path) -> None:
     cells = Cell.all(tmp_path)
-    assert len(cells) == 15
+    assert len(cells) == len(FLOWS) * len(SEEDS)
+    assert {(cell.flow, cell.seed) for cell in cells} == {
+        (flow, seed) for flow in FLOWS for seed in SEEDS
+    }
     assert cells[0].cell_dir == tmp_path / cells[0].flow / str(cells[0].seed)
