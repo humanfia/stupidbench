@@ -44,6 +44,7 @@ PROXY_IMAGE = (
 EVALUATOR_HOST = "evaluator"
 PROXY_HOST = "proxy"
 PROXY_PORT = 8888
+RESOLVER_PORT = 8889
 
 #: Where a model provider is reached, and nothing else is. A cell that could
 #: open a connection anywhere could post the credential it holds anywhere.
@@ -90,7 +91,13 @@ _RUN_SCRIPTS: dict[Tool, str] = {
         -c "model_reasoning_effort=\\"$EFFORT\\"" \\
         -c 'service_tier="default"' \\
         < .stupidbench/task.md || true""",
-    "claude": """claude --print \\
+    # Claude keeps a copy of the settings its provider hands down, and one of
+    # them turns off the very mode the cell runs in: a run that starts with that
+    # copy on disk asks for an approval nobody is there to give, and every
+    # command it tries comes back refused. The copy is a cache, fetched again
+    # each time, so a run starts without one.
+    "claude": """rm -f "$CLAUDE_CONFIG_DIR/remote-settings.json"
+    claude --print \\
         --dangerously-skip-permissions \\
         --model "$MODEL" \\
         --effort "$EFFORT" \\
@@ -102,23 +109,17 @@ _RUN_SCRIPTS: dict[Tool, str] = {
 
 
 def prepare(cell: Cell) -> None:
-    """Stages the cell, or leaves alone one a previous segment already staged."""
-    if cell.events_path.is_file():
-        return
+    """Stages the cell, or leaves alone one a previous segment already staged.
+
+    The run script is the exception: it is written every segment. It is the one
+    file here that is ours rather than the agent's, and a cell that was already
+    in flight when a bug in it was found has the rest of its budget to spend on
+    the fixed one.
+    """
     flow = FLOWS[cell.flow]
     agent = cell.agent_dir
-    (agent / "tests").mkdir(parents=True, exist_ok=True)
     (agent / ".stupidbench").mkdir(parents=True, exist_ok=True)
-    for source, destination in (
-        ("TASK.md", ".stupidbench/task.md"),
-        ("perf_takehome.py", "perf_takehome.py"),
-        ("problem.py", "problem.py"),
-        ("tests/generate.py", "tests/generate.py"),
-        ("tests/submission_tests.py", "tests/submission_tests.py"),
-    ):
-        shutil.copy2(TASK_DIR / source, agent / destination)
-    run_script = agent / ".stupidbench/run.sh"
-    run_script.write_text(
+    (agent / ".stupidbench/run.sh").write_text(
         "#!/bin/bash\n\n"
         f'export MODEL="{flow.model}"\n'
         f'export EFFORT="{flow.effort}"\n\n'
@@ -128,6 +129,17 @@ def prepare(cell: Cell) -> None:
         "done\n",
         encoding="utf-8",
     )
+    if cell.events_path.is_file():
+        return
+    (agent / "tests").mkdir(parents=True, exist_ok=True)
+    for source, destination in (
+        ("TASK.md", ".stupidbench/task.md"),
+        ("perf_takehome.py", "perf_takehome.py"),
+        ("problem.py", "problem.py"),
+        ("tests/generate.py", "tests/generate.py"),
+        ("tests/submission_tests.py", "tests/submission_tests.py"),
+    ):
+        shutil.copy2(TASK_DIR / source, agent / destination)
     # A CLI's web tools run at its provider, so they reach hosts the cell's own
     # network never can. Every flow denies them, so that what an agent finds is
     # what it worked out. Kimi Code needs no entry: its search is a service the
@@ -177,9 +189,12 @@ def run(cell: Cell, seconds: int) -> str:
             client.images.pull(image)
 
     proxy_dir = Path(tempfile.mkdtemp(prefix="stupidbench-proxy-"))
+    resolver_path = proxy_dir / "resolver.cfg"
+    resolver_path.write_text(_resolver_config(), encoding="utf-8")
+    resolver_path.chmod(0o444)
+    # Written once the resolver has an address, which is the one thing in the
+    # gate's config that only exists after a container does.
     config_path = proxy_dir / "3proxy.cfg"
-    config_path.write_text(_proxy_config(), encoding="utf-8")
-    config_path.chmod(0o444)
     name = f"stupidbench-{cell.flow}-{cell.seed}"
     # A segment that died without cleaning up leaves containers holding the
     # names this one needs, and creating them again would fail. The cell's own
@@ -229,6 +244,31 @@ def run(cell: Cell, seconds: int) -> str:
             use_config_proxy=False,
         )
         containers.append(evaluator)
+        # The only thing in a cell that ever resolves a name, and the agent is
+        # on neither of the networks it can be reached from.
+        resolver = client.containers.create(
+            PROXY_IMAGE,
+            name=f"{name}-resolver",
+            hostname="resolver",
+            user="65534:65534",
+            mem_limit=f"{PROXY_MEMORY_MB}m",
+            volumes={
+                str(resolver_path): {"bind": "/etc/3proxy/3proxy.cfg", "mode": "ro"}
+            },
+            network=egress.name,
+            read_only=True,
+            tmpfs={"/tmp": "rw,noexec,nosuid,size=16m"},
+            sysctls={"net.ipv4.ip_forward": "0"},
+            cap_drop=["ALL"],
+            security_opt=["no-new-privileges:true"],
+            use_config_proxy=False,
+        )
+        containers.append(resolver)
+        resolver.start()
+        config_path.write_text(
+            _proxy_config(_address(resolver, egress.name)), encoding="utf-8"
+        )
+        config_path.chmod(0o444)
         proxy = client.containers.create(
             PROXY_IMAGE,
             name=f"{name}-proxy",
@@ -239,6 +279,9 @@ def run(cell: Cell, seconds: int) -> str:
                 str(config_path): {"bind": "/etc/3proxy/3proxy.cfg", "mode": "ro"}
             },
             network=egress.name,
+            # The resolver it forwards to is reached by address, so the one
+            # Docker would otherwise hand it is a way out it has no use for.
+            dns=["127.0.0.1"],
             read_only=True,
             tmpfs={"/tmp": "rw,noexec,nosuid,size=16m"},
             sysctls={"net.ipv4.ip_forward": "0"},
@@ -251,6 +294,14 @@ def run(cell: Cell, seconds: int) -> str:
         evaluator.start()
         proxy.start()
         _await_evaluator(evaluator)
+        # A resolver that did not stay up leaves the gate forwarding to an
+        # address nobody answers, and the cell would spend the rest of its
+        # segment unable to reach a provider without anything saying why.
+        # Docker still calls a container that has just died running, so this is
+        # asked once the evaluator is up rather than when the resolver started.
+        resolver.reload()
+        if resolver.status != "running":
+            raise RuntimeError("the cell's resolver did not stay up")
 
         agent = client.containers.create(
             IMAGE,
@@ -359,7 +410,38 @@ def _address(container, network: str) -> str:
     return address
 
 
-def _proxy_config() -> str:
+def _proxy_config(resolver: str) -> str:
+    """The half an agent talks to, which never resolves a name.
+
+    3proxy looks a target up before it applies its rules, so a cell that only
+    denied the connection would already have sent ``<secret>.attacker.example``
+    to a nameserver the attacker owns: the answer is refused, the question is
+    the exfiltration. Under ``fakeresolve`` nothing is looked up here at all — a
+    host is allowed on its name alone, and only a name that was allowed is
+    handed on, still a name, to the half that does resolve.
+    """
+    return "\n".join(
+        (
+            "nscache 65536",
+            "fakeresolve",
+            "log",
+            "auth iponly",
+            f"allow * * {','.join(ALLOWED_HOSTS)} 443 HTTPS",
+            f"parent 1000 http {resolver} {RESOLVER_PORT}",
+            "deny *",
+            f"proxy -a -p{PROXY_PORT}",
+            "",
+        )
+    )
+
+
+def _resolver_config() -> str:
+    """The half that resolves, on a network the agent is not on.
+
+    It keeps the same allow list rather than trusting what reached it, for the
+    reason the evaluator is its own container: one rule is an assumption, two
+    that have to agree is a check.
+    """
     return "\n".join(
         (
             "nserver 127.0.0.11",
@@ -368,7 +450,7 @@ def _proxy_config() -> str:
             "auth iponly",
             f"allow * * {','.join(ALLOWED_HOSTS)} 443 HTTPS",
             "deny *",
-            f"proxy -a -p{PROXY_PORT}",
+            f"proxy -a -p{RESOLVER_PORT}",
             "",
         )
     )

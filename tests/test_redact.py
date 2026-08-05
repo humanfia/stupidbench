@@ -34,6 +34,28 @@ def test_redact_removes_credential_files_and_every_live_token(tmp_path: Path) ->
     assert (tmp_path / "cell/agent/perf_takehome.py").read_text() == "# work\n"
 
 
+def test_redact_removes_the_copies_a_config_is_rewritten_through(
+    tmp_path: Path,
+) -> None:
+    # The live file goes by name, and the dated copies beside it hold everything
+    # it held under a name that match walks past — so the token in a copy would
+    # have been published while the file it came from was deleted.
+    state = tmp_path / "cell/agent/.stupidbench/claude"
+    (state / "backups").mkdir(parents=True)
+    (state / ".claude.json").write_text("secret-token", encoding="utf-8")
+    for copy in (
+        "backups/.claude.json.backup.1785899797426",
+        "backups/.claude.json.corrupted.1785899797427",
+    ):
+        (state / copy).write_text("secret-token", encoding="utf-8")
+
+    deleted, rewritten = redact(tmp_path, ["secret-token"])
+
+    # All three went, so nothing was left holding a token to be rewritten.
+    assert (deleted, rewritten) == (3, 0)
+    assert not any(path.is_file() for path in state.rglob("*"))
+
+
 def test_redact_removes_anything_shaped_like_a_key(tmp_path: Path) -> None:
     log = tmp_path / "agent.log"
     log.write_text(

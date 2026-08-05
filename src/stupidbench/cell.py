@@ -65,6 +65,13 @@ INIT_SCORE = 147734
 #: Agent time a cell is given, over as many segments as it takes.
 BUDGET_SECONDS = 24 * 60 * 60
 
+#: Agent time a segment may take without the evaluator recording anything
+#: before that segment counts as a failure. A flow that works scores inside an
+#: hour — the slowest yet took less than one, and spent it thinking — and a real
+#: segment is four and a half, so this catches an agent that cannot work at all
+#: without catching one that is only slow.
+SCORELESS_SECONDS = 2 * 60 * 60
+
 EventType = Literal["start", "tick", "stop"]
 
 

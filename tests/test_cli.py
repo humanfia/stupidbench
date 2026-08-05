@@ -81,5 +81,84 @@ def test_run_reports_what_the_segment_did(
         ]
     )
 
+    # An hour is what the slowest flow yet took to reach its first score, so a
+    # segment that short with none of them is not yet evidence of anything.
     assert status == 0
     assert "1.00h of 24h spent" in capsys.readouterr().out
+
+
+def test_run_fails_when_a_long_segment_recorded_no_score(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    # An agent that cannot run a single command spends the budget as quietly as
+    # one that can: the run this comes from was green in all twelve jobs, one of
+    # which had done nothing at all.
+    cells = tmp_path / "cells"
+    cell = Cell("opus5_max", 0, cells / "opus5_max" / "0")
+
+    def fake_run(cell_argument: Cell, seconds: int) -> str:
+        cell_argument.events_path.write_text(
+            '{"datetime": "2026-08-04T00:00:00+00:00", "type": "start"}\n'
+            '{"datetime": "2026-08-04T04:30:00+00:00", "type": "stop"}\n',
+            encoding="utf-8",
+        )
+        return "ran"
+
+    monkeypatch.setattr(runner, "run", fake_run)
+    runner.prepare(cell)
+
+    status = cli.main(
+        [
+            "--cells",
+            str(cells),
+            "run",
+            "--flow",
+            "opus5_max",
+            "--seed",
+            "0",
+            "--seconds",
+            "16200",
+        ]
+    )
+
+    assert status == 1
+    assert "recorded nothing" in capsys.readouterr().err
+
+
+def test_run_passes_a_long_segment_that_scored(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    cells = tmp_path / "cells"
+    cell = Cell("opus5_max", 0, cells / "opus5_max" / "0")
+
+    def fake_run(cell_argument: Cell, seconds: int) -> str:
+        cell_argument.events_path.write_text(
+            '{"datetime": "2026-08-04T00:00:00+00:00", "type": "start"}\n'
+            '{"datetime": "2026-08-04T04:30:00+00:00", "type": "stop"}\n',
+            encoding="utf-8",
+        )
+        cell_argument.scores_path.write_text(
+            '{"datetime": "2026-08-04T02:00:00+00:00", "score": 1405}\n',
+            encoding="utf-8",
+        )
+        return "ran"
+
+    monkeypatch.setattr(runner, "run", fake_run)
+    runner.prepare(cell)
+
+    assert (
+        cli.main(
+            [
+                "--cells",
+                str(cells),
+                "run",
+                "--flow",
+                "opus5_max",
+                "--seed",
+                "0",
+                "--seconds",
+                "16200",
+            ]
+        )
+        == 0
+    )

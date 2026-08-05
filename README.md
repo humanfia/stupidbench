@@ -45,8 +45,8 @@ stupidbench redact                              # take every credential back out
 stupidbench report --out report                 # draw the curves, write the report
 ```
 
-`prepare` skips a cell that is already staged and `run` picks a cell up where it
-was left, so repeating either continues rather than restarts. A cell is done
+`prepare` leaves the work of a cell that is already staged alone and `run` picks
+a cell up where it was left, so repeating either continues rather than restarts. A cell is done
 when it has spent its twenty-four hours of agent time; time between runs is not
 charged to it.
 
@@ -72,8 +72,10 @@ dispatch can carry a token, and both need write access.
 
 A cell is given exactly one credential — the token of the CLI it runs, never the
 others — and reaches the network only through a proxy that allows the model
-providers and denies everything else, so a token cannot be sent anywhere it is
-not already used. Before anything leaves a runner, `stupidbench redact` deletes
+providers and denies everything else. It can look up nothing else either, so not
+even a hostname it asks for leaves carrying something, and a token cannot be
+sent anywhere it is not already used. Before anything leaves a runner,
+`stupidbench redact` deletes
 what the CLIs store credentials in and replaces every occurrence of a live
 token, or of anything shaped like one, anywhere an agent may have written it. A
 segment that cannot redact publishes nothing.

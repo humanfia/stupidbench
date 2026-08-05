@@ -8,7 +8,7 @@ from pathlib import Path
 from stupidbench import redact as redaction
 from stupidbench import report as reporting
 from stupidbench import runner
-from stupidbench.cell import BUDGET_SECONDS, FLOWS, SEEDS, Cell
+from stupidbench.cell import BUDGET_SECONDS, FLOWS, SCORELESS_SECONDS, SEEDS, Cell
 from stupidbench.usage import pricing
 
 
@@ -52,18 +52,32 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"{cell.flow}/{cell.seed} is {cell.state}")
         return 0
 
+    before = cell.elapsed
+    scored = len(cell.scores())
     outcome = runner.run(cell, args.seconds)
     spent = cell.elapsed
+    scores = cell.scores()
     print(
         f"{cell.flow}/{cell.seed} {outcome}: "
         f"{spent / 3600:.2f}h of {BUDGET_SECONDS / 3600:.0f}h spent, "
-        f"{len(cell.scores())} scores, now {cell.state}"
+        f"{len(scores)} scores, now {cell.state}"
     )
     if spent <= 0:
         # A cell that cannot be admitted is waited on rather than refused, and
         # a segment that never ran must not read as one that ran and found
         # nothing.
         print("the cell never started", file=sys.stderr)
+        return 1
+    if spent - before >= SCORELESS_SECONDS and len(scores) == scored:
+        # An agent that cannot run a command spends the budget as quietly as one
+        # that can, and every job of the run it broke went green. Hours of agent
+        # time with nothing recorded is the one thing a cell cannot mean
+        # anything else by.
+        print(
+            f"the segment gave the cell {(spent - before) / 3600:.2f}h "
+            "and the evaluator recorded nothing",
+            file=sys.stderr,
+        )
         return 1
     return 0
 

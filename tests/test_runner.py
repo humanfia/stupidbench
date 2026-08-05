@@ -45,6 +45,36 @@ def test_prepare_leaves_a_staged_cell_alone(tmp_path: Path) -> None:
     assert kernel.read_text() == "# the agent's own work\n"
 
 
+def test_prepare_rewrites_the_run_script_of_a_cell_already_in_flight(
+    tmp_path: Path,
+) -> None:
+    # A cell is carried for twenty-four hours over as many segments as that
+    # takes, so a fix to what it runs has to reach the cell already running the
+    # old one rather than only the next cell staged.
+    cell = Cell("opus5_max", 1, tmp_path / "cell")
+    runner.prepare(cell)
+    cell.record("start")
+    script = cell.agent_dir / ".stupidbench/run.sh"
+    script.write_text("#!/bin/bash\n# what the segment before ran\n", encoding="utf-8")
+
+    runner.prepare(cell)
+
+    assert "while true; do" in script.read_text()
+
+
+def test_prepare_starts_claude_without_the_settings_it_cached(tmp_path: Path) -> None:
+    # The copy claude keeps of what its provider hands down turns off the mode
+    # the cell runs in, and the segment that restored one had every command the
+    # agent tried come back needing an approval nobody was there to give.
+    cell = Cell("opus5_max", 0, tmp_path / "claude")
+
+    runner.prepare(cell)
+
+    script = (cell.agent_dir / ".stupidbench/run.sh").read_text()
+    assert 'rm -f "$CLAUDE_CONFIG_DIR/remote-settings.json"' in script
+    assert script.index("remote-settings.json") < script.index("claude --print")
+
+
 def test_prepare_denies_the_web_tools_a_cli_reaches_through_its_provider(
     tmp_path: Path,
 ) -> None:
@@ -103,9 +133,10 @@ def test_agent_environment_omits_a_token_the_runner_was_not_given(
     )
 
 
-def test_proxy_config_allows_the_providers_and_nothing_else() -> None:
-    config = runner._proxy_config()
-
+@pytest.mark.parametrize(
+    "config", (runner._proxy_config("10.0.0.2"), runner._resolver_config())
+)
+def test_proxy_config_allows_the_providers_and_nothing_else(config: str) -> None:
     for host in runner.ALLOWED_HOSTS:
         assert host in config
     assert "deny *" in config
@@ -114,6 +145,20 @@ def test_proxy_config_allows_the_providers_and_nothing_else() -> None:
     assert len(allow) == 1
     assert allow[0].endswith("443 HTTPS")
     assert config.index(allow[0]) < config.index("deny *")
+
+
+def test_proxy_config_denies_a_host_without_ever_looking_it_up() -> None:
+    # 3proxy resolves a target before it applies its rules, so a cell that only
+    # refused the connection would already have sent the name it was given to a
+    # nameserver: the answer is denied, the question is the exfiltration.
+    config = runner._proxy_config("10.0.0.2")
+
+    assert "fakeresolve" in config
+    assert "nserver" not in config
+    # What the ACL did let through is handed on as a name, to the one half of
+    # the proxy that resolves and that the agent's network cannot reach.
+    assert f"parent 1000 http 10.0.0.2 {runner.RESOLVER_PORT}" in config
+    assert "nserver 127.0.0.11" in runner._resolver_config()
 
 
 def test_run_refuses_a_cell_that_was_never_staged(tmp_path: Path) -> None:

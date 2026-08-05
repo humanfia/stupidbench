@@ -30,6 +30,13 @@ CREDENTIAL_NAMES = (
     "oauth",
 )
 
+#: Claude Code rewrites its configuration through dated copies beside it, as
+#: `backups/.claude.json.backup.1785899797426`. A copy holds everything the
+#: original held — the key a login puts there, the account it was for, whatever
+#: header an MCP server an agent added authenticates with — under a name that
+#: matching the file itself walks straight past.
+CONFIG_COPIES = ".claude.json."
+
 #: Shapes of credential that are worth removing even when they are not one of
 #: ours: a token a CLI minted for itself is no better to publish.
 PATTERNS = (
@@ -64,7 +71,7 @@ def redact(root: Path, values: Iterable[str]) -> tuple[int, int]:
     expression = re.compile(b"|".join(patterns + list(PATTERNS)))
     deleted = 0
     for path in sorted(root.rglob("*"), reverse=True):
-        if path.name in CREDENTIAL_NAMES:
+        if path.name in CREDENTIAL_NAMES or path.name.startswith(CONFIG_COPIES):
             # Never followed: a symlink is unlinked, not walked into. A failure
             # here raises, which is what closes the gate on publishing.
             if path.is_symlink() or not path.is_dir():
