@@ -32,15 +32,16 @@ of the CLI it runs — `CLAUDE_CODE_OAUTH_TOKEN`, `CODEX_ACCESS_TOKEN` or
 ## Usage
 
 The bench runs itself: [`stupid bench`](.github/workflows/bench.yaml) starts
-every six hours on Sundays and Mondays, gives each cell as much of its
-twenty-four hours as a job can hold, and hands what it has to the next one. Run
-it early from the Actions tab.
+every Sunday and carries every cell through its full twenty-four hours before it
+ends — six jobs in turn, each handing on the cell it carried, because a hosted
+job is capped at six hours. A run leaves nothing behind for the next one to
+continue. Run it early from the Actions tab.
 
 The same four commands work on any host:
 
 ```sh
-stupidbench prepare --flow opus5_max_ralph --seed 0  # stage one cell
-stupidbench run --flow opus5_max_ralph --seed 0 --seconds 3600
+stupidbench prepare --flow opus5_max --seed 0  # stage one cell
+stupidbench run --flow opus5_max --seed 0 --seconds 3600
 stupidbench redact           # take every credential back out
 stupidbench report --out report  # draw the curves, write the report
 ```
@@ -48,25 +49,26 @@ stupidbench report --out report  # draw the curves, write the report
 `prepare` leaves the work of a cell that is already staged alone and `run` picks
 a cell up where it was left, so repeating either continues rather than restarts.
 A cell is done when it has spent its twenty-four hours of agent time; time
-between runs is not charged to it.
+between segments is not charged to it.
 
-A flow is a model, an effort and a loop. The models are `gpt56sol`,
-`gpt56terra`, `gpt56luna`, `opus5` and `k3`, all at `max`; the loop is either
-`ralph`, which meets the task with a new session every turn, or `stateful`,
-which resumes the session it left and is sent the task again. That makes flows
-like `opus5_max_ralph` and `opus5_max_stateful`, ten in all, each run on the
-three seeds 0, 1 and 2.
+A flow is a model and an effort. The models are `gpt56sol`, `gpt56terra`,
+`gpt56luna`, `opus5` and `k3`, all at `max`, which makes flows like `opus5_max`,
+five in all, each run on the three seeds 0, 1 and 2. Every flow meets the task
+with a new session each turn, so what an agent carries through its twenty-four
+hours is only what it wrote down.
 
 ## Results
 
 Every run leaves:
 
 - **a report** in the job summary — best score per flow, and per cell, against
-  what each spent;
+  what each spent, at the reasoning budget its CLI recorded answering it at and
+  in mean and largest output tokens per response;
 - **the curves**, as a `report` artifact: score against dollars, output tokens
   and agent hours, with the three seeds of a flow averaged;
-- **every trajectory**, as one `cell-<flow>-<seed>` artifact per cell — the
-  sessions its CLI kept, its scores, its events, and the work it leaves behind.
+- **every trajectory**, as one `cell-<flow>-<seed>` artifact per cell, holding a
+  tar of the whole cell — the sessions its CLI kept, its scores, its events, and
+  the work it leaves behind.
 
 ## Security
 

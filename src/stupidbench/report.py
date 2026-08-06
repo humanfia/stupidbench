@@ -51,6 +51,15 @@ class History:
     state: str
     points: tuple[Point, ...]
     end: Point
+    #: What the cell was answered at, and how much of an answer it got: the
+    #: reasoning budgets its CLI recorded, how many responses it was sent, the
+    #: largest one of them, and how many of their tokens went on thinking where
+    #: the CLI counts those apart. A flow that asks for `max` and is quietly
+    #: answered at less says so here and nowhere else.
+    juice: tuple[str, ...]
+    responses: int
+    max_output: int
+    reasoning_tokens: int
 
 
 def read_history(cell: Cell, prices: Pricing) -> History:
@@ -71,6 +80,10 @@ def read_history(cell: Cell, prices: Pricing) -> History:
         state=cell.state,
         points=tuple(points),
         end=Point(best, cost, tokens, elapsed_at(events, float("inf")) / 3600),
+        juice=tuple(sorted({usage.effort for usage in spent if usage.effort})),
+        responses=len(spent),
+        max_output=max((usage.output_tokens for usage in spent), default=0),
+        reasoning_tokens=sum(usage.reasoning_tokens for usage in spent),
     )
 
 
@@ -160,37 +173,61 @@ def markdown(histories: list[History], curves_name: str) -> str:
         "",
         "## By flow",
         "",
-        "| flow | seeds | best | mean best | cost (USD) | output tokens | agent hours |",
-        "| --- | --- | --- | --- | --- | --- | --- |",
+        (
+            "| flow | juice | seeds | best | mean best | cost (USD) | "
+            "output tokens | mean out | max out | agent hours |"
+        ),
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for flow in sorted({history.flow for history in histories}):
         group = [history for history in histories if history.flow == flow]
         best = [history.end.score for history in group]
+        responses = sum(history.responses for history in group)
+        tokens = sum(history.end.output_tokens for history in group)
+        thinking = sum(history.reasoning_tokens for history in group)
+        juice = "/".join(sorted({effort for h in group for effort in h.juice})) or "—"
+        if thinking and responses:
+            juice += f" ({thinking / responses:,.0f})"
         lines.append(
-            f"| `{flow}` | {len(group)} | {min(best):,.0f} | "
+            f"| `{flow}` | {juice} | {len(group)} | {min(best):,.0f} | "
             f"{sum(best) / len(best):,.0f} | "
-            f"{sum(h.end.cost for h in group):,.2f} | "
-            f"{sum(h.end.output_tokens for h in group):,} | "
+            f"{sum(h.end.cost for h in group):,.2f} | {tokens:,} | "
+            f"{tokens / responses if responses else 0:,.0f} | "
+            f"{max(h.max_output for h in group):,} | "
             f"{sum(h.end.hours for h in group):,.1f} |"
         )
     lines += [
         "",
         "## By cell",
         "",
-        "| flow | seed | state | best | cost (USD) | output tokens | agent hours |",
-        "| --- | --- | --- | --- | --- | --- | --- |",
+        (
+            "| flow | seed | juice | state | best | cost (USD) | "
+            "output tokens | mean out | max out | agent hours |"
+        ),
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for history in sorted(histories, key=lambda h: (h.flow, h.seed)):
         progress = history.end.hours / (BUDGET_SECONDS / 3600)
+        mean_output = (
+            history.end.output_tokens / history.responses if history.responses else 0
+        )
+        juice = "/".join(history.juice) or "—"
+        if history.reasoning_tokens and history.responses:
+            juice += f" ({history.reasoning_tokens / history.responses:,.0f})"
         lines.append(
-            f"| `{history.flow}` | {history.seed} | {history.state} ({progress:.0%}) | "
-            f"{history.end.score:,.0f} | {history.end.cost:,.2f} | "
-            f"{history.end.output_tokens:,} | {history.end.hours:,.1f} |"
+            f"| `{history.flow}` | {history.seed} | {juice} | "
+            f"{history.state} ({progress:.0%}) | {history.end.score:,.0f} | "
+            f"{history.end.cost:,.2f} | {history.end.output_tokens:,} | "
+            f"{mean_output:,.0f} | {history.max_output:,} | {history.end.hours:,.1f} |"
         )
     footnote = (
-        f"Starting score is {INIT_SCORE:,}, and lower is better. A `ralph` flow "
-        "meets the task with a new session every turn; a `stateful` one resumes "
-        "the session it left and is sent the task again."
+        f"Starting score is {INIT_SCORE:,}, and lower is better. Every flow meets "
+        "the task with a new session every turn, so what it carries from one turn "
+        "to the next is only what it wrote down. `juice` is the reasoning budget "
+        "the CLI recorded its responses running at, and in brackets what one of "
+        "them spent thinking, where the CLI counts thinking apart from the rest "
+        "of what it wrote; `mean out` and `max out` are the output tokens of one "
+        "response, thinking included."
     )
     lines += ["", footnote, ""]
     return "\n".join(lines)

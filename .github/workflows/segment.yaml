@@ -1,0 +1,133 @@
+name: segment
+
+# One leg of the relay a run carries every cell along. It is called, never
+# triggered: what it needs is a token, and the only events that hold one are the
+# schedule and the dispatch that start `stupid bench`.
+
+on:
+  workflow_call:
+    inputs:
+      segment:
+        description: which leg this is, counting from one
+        required: true
+        type: number
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: true
+      CODEX_ACCESS_TOKEN:
+        required: true
+      KIMI_MODEL_API_KEY:
+        required: true
+
+jobs:
+  # One cell — one flow, one seed — per job, because a hosted runner fits
+  # exactly one: the agent alone asks for 6 GB of the 16 GB the runner has.
+  cell:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        flow:
+          - gpt56sol_max
+          - gpt56terra_max
+          - gpt56luna_max
+          - opus5_max
+          - k3_max
+        seed: [0, 1, 2]
+    env:
+      # Short of the six-hour job cap by enough to pull a sixteen-gigabyte image
+      # ahead of the agent and to redact, pack and publish the cell behind it.
+      SEGMENT_SECONDS: "16200"
+      ARCHIVE: cell-${{ matrix.flow }}-${{ matrix.seed }}.tgz
+    steps:
+      # The runtime image is sixteen gigabytes, and a runner has room for it
+      # only once the toolchains it will never use are gone. Before anything
+      # installs into the tool cache, which this clears.
+      - name: Free disk space for the runtime image
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /usr/local/share/boost /opt/hostedtoolcache
+          df -h
+
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v5
+
+      # The whole cell, sessions included: they are what this segment adds to,
+      # what the spend is summed over, and what the run is read from. It comes
+      # from this run and no other — an artifact of a finished run is a result,
+      # and nothing here goes looking for one — so the first segment starts the
+      # cell from nothing, and so does one whose predecessor published nothing.
+      # The credentials are the one thing that never travels with it.
+      - name: Take back the cell the relay is carrying
+        if: inputs.segment > 1
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: cell-${{ matrix.flow }}-${{ matrix.seed }}
+
+      # A tar rather than the tree, because an artifact is a zip and a zip keeps
+      # neither the bit that makes what the agent wrote runnable nor the links
+      # it laid down. A cell that comes back missing those is a cell whose own
+      # work stopped working under it.
+      - name: Unpack it
+        run: |
+          if [ -f "$ARCHIVE" ]; then
+            tar -xzf "$ARCHIVE"
+            rm "$ARCHIVE"
+          fi
+
+      # Staging skips a cell that is already staged, so this both starts the
+      # first segment and is a no-op for every one after it.
+      - name: Stage the cell
+        run: uv run stupidbench prepare --flow ${{ matrix.flow }} --seed ${{ matrix.seed }}
+
+      - name: Run the segment
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          CODEX_ACCESS_TOKEN: ${{ secrets.CODEX_ACCESS_TOKEN }}
+          KIMI_MODEL_API_KEY: ${{ secrets.KIMI_MODEL_API_KEY }}
+          # Which endpoint a Kimi key is redeemed at, when it is not the default.
+          KIMI_MODEL_BASE_URL: ${{ vars.KIMI_MODEL_BASE_URL }}
+        run: |
+          uv run stupidbench run \
+            --flow ${{ matrix.flow }} \
+            --seed ${{ matrix.seed }} \
+            --seconds "$SEGMENT_SECONDS"
+
+      - name: Stop anything still holding the token
+        if: always()
+        run: docker rm -f $(docker ps -aq --filter name=stupidbench-) 2>/dev/null || true
+
+      # Everything below leaves the runner into a public artifact, so nothing
+      # below runs until this has: it deletes what a CLI stores credentials in
+      # and replaces every occurrence of a live token, or of anything shaped
+      # like one, wherever an agent happened to write it.
+      - name: Take the credentials back out
+        id: redact
+        if: always()
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          CODEX_ACCESS_TOKEN: ${{ secrets.CODEX_ACCESS_TOKEN }}
+          KIMI_MODEL_API_KEY: ${{ secrets.KIMI_MODEL_API_KEY }}
+        run: uv run stupidbench redact
+
+      - name: Pack the cell
+        id: pack
+        if: always() && steps.redact.outcome == 'success'
+        run: tar -czf "$ARCHIVE" cells
+
+      # What the next segment takes back, and, once the last one has run, what
+      # the run publishes: every session the agent kept, every score and event,
+      # and the work it leaves behind. Each segment replaces what the one before
+      # it left, so a cell has one artifact and it is the cell as it now stands.
+      - name: Hand the cell on
+        if: always() && steps.pack.outcome == 'success'
+        uses: actions/upload-artifact@v7
+        with:
+          name: cell-${{ matrix.flow }}-${{ matrix.seed }}
+          path: cell-${{ matrix.flow }}-${{ matrix.seed }}.tgz
+          overwrite: true
+          retention-days: 30

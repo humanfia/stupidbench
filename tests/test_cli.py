@@ -13,9 +13,7 @@ def test_prepare_then_report_over_a_cell_that_never_ran(
     cells = tmp_path / "cells"
 
     assert (
-        cli.main(
-            ["--cells", str(cells), "prepare", "--flow", "k3_max_ralph", "--seed", "0"]
-        )
+        cli.main(["--cells", str(cells), "prepare", "--flow", "k3_max", "--seed", "0"])
         == 0
     )
     assert (
@@ -39,7 +37,7 @@ def test_run_fails_when_the_cell_never_started(
             str(tmp_path / "cells"),
             "run",
             "--flow",
-            "opus5_max_ralph",
+            "opus5_max",
             "--seed",
             "0",
             "--seconds",
@@ -55,7 +53,7 @@ def test_run_reports_what_the_segment_did(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture
 ) -> None:
     cells = tmp_path / "cells"
-    cell = Cell("opus5_max_ralph", 0, cells / "opus5_max_ralph" / "0")
+    cell = Cell("opus5_max", 0, cells / "opus5_max" / "0")
 
     def fake_run(cell_argument: Cell, seconds: int) -> str:
         cell_argument.record("start")
@@ -75,7 +73,7 @@ def test_run_reports_what_the_segment_did(
             str(cells),
             "run",
             "--flow",
-            "opus5_max_ralph",
+            "opus5_max",
             "--seed",
             "0",
             "--seconds",
@@ -96,7 +94,7 @@ def test_run_fails_when_a_long_segment_recorded_no_score(
     # one that can: the run this comes from was green in all twelve jobs, one of
     # which had done nothing at all.
     cells = tmp_path / "cells"
-    cell = Cell("opus5_max_ralph", 0, cells / "opus5_max_ralph" / "0")
+    cell = Cell("opus5_max", 0, cells / "opus5_max" / "0")
 
     def fake_run(cell_argument: Cell, seconds: int) -> str:
         cell_argument.events_path.write_text(
@@ -115,7 +113,7 @@ def test_run_fails_when_a_long_segment_recorded_no_score(
             str(cells),
             "run",
             "--flow",
-            "opus5_max_ralph",
+            "opus5_max",
             "--seed",
             "0",
             "--seconds",
@@ -131,7 +129,7 @@ def test_run_passes_a_long_segment_that_scored(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     cells = tmp_path / "cells"
-    cell = Cell("opus5_max_ralph", 0, cells / "opus5_max_ralph" / "0")
+    cell = Cell("opus5_max", 0, cells / "opus5_max" / "0")
 
     def fake_run(cell_argument: Cell, seconds: int) -> str:
         cell_argument.events_path.write_text(
@@ -155,7 +153,7 @@ def test_run_passes_a_long_segment_that_scored(
                 str(cells),
                 "run",
                 "--flow",
-                "opus5_max_ralph",
+                "opus5_max",
                 "--seed",
                 "0",
                 "--seconds",

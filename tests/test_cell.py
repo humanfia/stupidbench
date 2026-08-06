@@ -48,7 +48,7 @@ def test_elapsed_at_stops_at_the_moment_asked_about() -> None:
 
 
 def test_state_follows_the_budget(tmp_path: Path) -> None:
-    cell = Cell("opus5_max_ralph", 0, tmp_path / "cell")
+    cell = Cell("opus5_max", 0, tmp_path / "cell")
     assert cell.state == "pending"
 
     write_events(
@@ -67,7 +67,7 @@ def test_state_follows_the_budget(tmp_path: Path) -> None:
 
 
 def test_records_events_and_reads_scores_in_order(tmp_path: Path) -> None:
-    cell = Cell("k3_max_ralph", 2, tmp_path / "cell")
+    cell = Cell("k3_max", 2, tmp_path / "cell")
     cell.record("start")
     cell.record("stop")
     assert [event.type for event in cell.events()] == ["start", "stop"]

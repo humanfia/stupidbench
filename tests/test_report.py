@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 from stupidbench.cell import INIT_SCORE, Cell
-from stupidbench.report import Point, frame, markdown, read_history, report
+from stupidbench.report import History, Point, frame, markdown, read_history, report
 from stupidbench.usage import Tier
 
 PRICES = {"gpt-5.6-sol": [Tier(0, {"prompt": 1.0, "completion": 10.0})]}
@@ -34,7 +34,7 @@ def _cell(tmp_path: Path, flow: str, seed: int, scores: list[tuple[str, int]]) -
 def test_history_keeps_only_what_beat_everything_before_it(tmp_path: Path) -> None:
     cell = _cell(
         tmp_path,
-        "gpt56sol_max_ralph",
+        "gpt56sol_max",
         0,
         [
             (
@@ -84,8 +84,8 @@ def test_frame_puts_every_seed_on_one_grid_and_stops_at_its_own_end() -> None:
 
 def test_report_draws_the_curves_and_writes_the_summary(tmp_path: Path) -> None:
     cells = tmp_path / "cells"
-    _cell(cells, "gpt56sol_max_ralph", 0, [("2026-08-04T01:00:00+00:00", 100_000)])
-    _cell(cells, "gpt56sol_max_ralph", 1, [("2026-08-04T01:00:00+00:00", 110_000)])
+    _cell(cells, "gpt56sol_max", 0, [("2026-08-04T01:00:00+00:00", 100_000)])
+    _cell(cells, "gpt56sol_max", 1, [("2026-08-04T01:00:00+00:00", 110_000)])
     out = tmp_path / "report"
 
     text = report(cells, out, PRICES)
@@ -93,7 +93,8 @@ def test_report_draws_the_curves_and_writes_the_summary(tmp_path: Path) -> None:
     assert (out / "curves.png").stat().st_size > 0
     assert (out / "curves.csv").is_file()
     assert (out / "report.md").read_text() == text
-    assert "| `gpt56sol_max_ralph` | 2 | 100,000 | 105,000 |" in text
+    # A cell whose CLI kept no session says nothing about what it ran at.
+    assert "| `gpt56sol_max` | — | 2 | 100,000 | 105,000 |" in text
     assert "curves.png" in text
 
 
@@ -109,12 +110,40 @@ def test_markdown_reports_progress_against_the_budget() -> None:
 
     text = markdown([history], "curves.png")
 
-    assert "| `f` | 0 | running (50%) | 900 |" in text
+    assert "| `f` | 0 | max | running (50%) | 900 |" in text
 
 
-def _history(flow: str, seed: int, points: list[tuple[float, float]], end: float):
-    from stupidbench.report import History
+def test_markdown_reports_what_a_response_ran_at_and_what_it_wrote() -> None:
+    # Twelve thousand output tokens over four responses, the largest of them
+    # nine thousand and two of every three spent thinking, and two budgets
+    # answered at where one was asked for.
+    history = _history(
+        "f",
+        0,
+        [(INIT_SCORE, 0.0), (900.0, 12.0)],
+        12.0,
+        juice=("high", "max"),
+        responses=4,
+        max_output=9_000,
+        reasoning_tokens=8_000,
+    )
 
+    text = markdown([history], "curves.png")
+
+    assert "| high/max (2,000) | running (50%) | 900 | 12.00 | 12,000 | 3,000 |" in text
+    assert "| `f` | high/max (2,000) | 1 | 900 | 900 | 12.00 | 12,000 | 3,000 |" in text
+
+
+def _history(
+    flow: str,
+    seed: int,
+    points: list[tuple[float, float]],
+    end: float,
+    juice: tuple[str, ...] = ("max",),
+    responses: int = 4,
+    max_output: int = 9_000,
+    reasoning_tokens: int = 0,
+) -> History:
     return History(
         flow=flow,
         seed=seed,
@@ -123,4 +152,8 @@ def _history(flow: str, seed: int, points: list[tuple[float, float]], end: float
             Point(score, hours, int(hours * 1000), hours) for score, hours in points
         ),
         end=Point(points[-1][0], end, int(end * 1000), end),
+        juice=juice,
+        responses=responses,
+        max_output=max_output,
+        reasoning_tokens=reasoning_tokens,
     )

@@ -30,13 +30,16 @@ def _codex_rows(rows: list[dict]) -> str:
 
 
 def test_codex_usage_is_priced_per_tier_and_ordered(tmp_path: Path) -> None:
-    cell = Cell("gpt56sol_max_ralph", 0, tmp_path / "cell")
+    cell = Cell("gpt56sol_max", 0, tmp_path / "cell")
     sessions = cell.state_dir / "sessions" / "2026" / "08"
     sessions.mkdir(parents=True)
     (sessions / "rollout.jsonl").write_text(
         _codex_rows(
             [
-                {"type": "turn_context", "payload": {"model": "gpt-5.6-sol"}},
+                {
+                    "type": "turn_context",
+                    "payload": {"model": "gpt-5.6-sol", "effort": "max"},
+                },
                 {
                     "timestamp": "2026-08-04T00:00:10+00:00",
                     "type": "event_msg",
@@ -47,6 +50,7 @@ def test_codex_usage_is_priced_per_tier_and_ordered(tmp_path: Path) -> None:
                                 "input_tokens": 100,
                                 "cached_input_tokens": 40,
                                 "output_tokens": 7,
+                                "reasoning_output_tokens": 5,
                             }
                         },
                     },
@@ -83,14 +87,20 @@ def test_codex_usage_is_priced_per_tier_and_ordered(tmp_path: Path) -> None:
     assert spent[0].cost == 60 * 1.0 + 40 * 0.5 + 7 * 10.0
     # Past 400k the long-context tier applies.
     assert spent[1].cost == 500_000 * 2.0 + 3 * 20.0
+    # What the turn was answered at, which the rollout states once per turn, and
+    # how much of what came back was thinking, which only Codex counts apart.
+    assert [usage.effort for usage in spent] == ["max", "max"]
+    assert [usage.reasoning_tokens for usage in spent] == [5, 0]
 
 
 def test_claude_usage_counts_each_message_once(tmp_path: Path) -> None:
-    cell = Cell("opus5_max_ralph", 0, tmp_path / "cell")
+    cell = Cell("opus5_max", 0, tmp_path / "cell")
     projects = cell.state_dir / "projects" / "-workspace"
     projects.mkdir(parents=True)
     message = {
         "timestamp": "2026-08-04T00:00:10+00:00",
+        # Claude writes what it was asked for beside the message, not in it.
+        "effort": "max",
         "message": {
             "id": "msg_1",
             "model": "claude-opus-5-20260101",
@@ -125,17 +135,25 @@ def test_claude_usage_counts_each_message_once(tmp_path: Path) -> None:
 
     assert len(spent) == 1
     assert spent[0].cost == 10 * 3.0 + 100 * 0.3 + 20 * 3.75 + 5 * 30.0
+    assert spent[0].effort == "max"
 
 
 def test_kimi_usage_is_read_off_the_wire_and_priced(tmp_path: Path) -> None:
     # Kimi Code writes no usage into its session; the count is in the wire log,
     # in milliseconds, against a model name the environment stood in for.
-    cell = Cell("k3_max_ralph", 0, tmp_path / "cell")
+    cell = Cell("k3_max", 0, tmp_path / "cell")
     wire = cell.state_dir / "sessions/wd_workspace_ab/session_cd/agents/main"
     wire.mkdir(parents=True)
     (wire / "wire.jsonl").write_text(
         _codex_rows(
             [
+                # What it was set to think at stands until another line says
+                # otherwise, and is nowhere in the record of the turn itself.
+                {
+                    "type": "config.update",
+                    "thinkingEffort": "max",
+                    "time": 1785892010000,
+                },
                 {
                     "type": "usage.record",
                     "model": "__kimi_env_model__",
@@ -168,10 +186,11 @@ def test_kimi_usage_is_read_off_the_wire_and_priced(tmp_path: Path) -> None:
     assert spent[0].output_tokens == 145
     assert spent[0].timestamp == 1785892010.229
     assert spent[0].cost == 2208 * 3.0 + 18688 * 0.3 + 145 * 15.0
+    assert spent[0].effort == "max"
 
 
 def test_kimi_counts_tokens_even_where_it_cannot_price_them(tmp_path: Path) -> None:
-    cell = Cell("k3_max_ralph", 1, tmp_path / "cell")
+    cell = Cell("k3_max", 1, tmp_path / "cell")
     wire = cell.state_dir / "sessions/wd/session_x/agents/main"
     wire.mkdir(parents=True)
     (wire / "wire.jsonl").write_text(
@@ -194,7 +213,7 @@ def test_kimi_counts_tokens_even_where_it_cannot_price_them(tmp_path: Path) -> N
 
 
 def test_an_unpriced_model_still_counts_its_tokens(tmp_path: Path) -> None:
-    cell = Cell("gpt56sol_max_ralph", 0, tmp_path / "cell")
+    cell = Cell("gpt56sol_max", 0, tmp_path / "cell")
     sessions = cell.state_dir / "sessions"
     sessions.mkdir(parents=True)
     (sessions / "rollout.jsonl").write_text(

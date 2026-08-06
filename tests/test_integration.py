@@ -44,7 +44,7 @@ def test_a_cell_runs_and_is_scored(
     monkeypatch.setattr(runner, "IMAGE", IMAGE)
     monkeypatch.setattr(runner, "TICK_SECONDS", 5)
     monkeypatch.setenv("CODEX_ACCESS_TOKEN", "a-token-no-one-should-publish")
-    cell = Cell("gpt56sol_max_ralph", 0, tmp_path / "cell")
+    cell = Cell("gpt56sol_max", 0, tmp_path / "cell")
     runner.prepare(cell)
     # The agent's own loop needs a credential this test has not got, so this
     # submits the kernel unchanged and writes the token where an agent that
@@ -85,7 +85,7 @@ def test_a_cell_reaches_nothing_but_its_evaluator(
 ) -> None:
     monkeypatch.setattr(runner, "IMAGE", IMAGE)
     monkeypatch.setattr(runner, "TICK_SECONDS", 5)
-    cell = Cell("gpt56sol_max_ralph", 1, tmp_path / "cell")
+    cell = Cell("gpt56sol_max", 1, tmp_path / "cell")
     runner.prepare(cell)
     # Six ways out, two of which are meant to work.
     (cell.agent_dir / ".stupidbench/run.sh").write_text(

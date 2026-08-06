@@ -25,6 +25,15 @@ class Usage:
     timestamp: float
     output_tokens: int
     cost: float
+    #: The reasoning budget the CLI recorded this exchange as having run at —
+    #: the juice, where a provider calls it that — or empty where the CLI writes
+    #: none down. A flow asks for `max` and is answered at whatever the provider
+    #: gives it, and this is the only place what it was given is stated.
+    effort: str = ""
+    #: Of the output tokens, the ones spent thinking. Only Codex counts them
+    #: apart; Claude and Kimi Code bill them as output and never say how many,
+    #: so this is zero where the budget is all that is known.
+    reasoning_tokens: int = 0
 
 
 @dataclass(frozen=True)
@@ -101,18 +110,17 @@ def _codex_usages(sessions_dir: Path, prices: Pricing) -> list[Usage]:
     found: list[Usage] = []
     for path in sorted(sessions_dir.rglob("*.jsonl")):
         rows = list(read_jsonl(path))
-        # A rollout can report usage before it says which model spent it.
-        model = next(
-            (
-                row["payload"]["model"]
-                for row in rows
-                if row.get("type") == "turn_context"
-            ),
-            None,
+        # A rollout can report usage before it says which model spent it, or at
+        # what budget.
+        opening = next(
+            (row["payload"] for row in rows if row.get("type") == "turn_context"), {}
         )
+        model = opening.get("model")
+        effort = opening.get("effort") or ""
         for row in rows:
             if row.get("type") == "turn_context":
-                model = row["payload"]["model"]
+                model = row["payload"].get("model", model)
+                effort = row["payload"].get("effort") or ""
             if row.get("type") != "event_msg" or not isinstance(model, str):
                 continue
             payload = row["payload"]
@@ -130,6 +138,8 @@ def _codex_usages(sessions_dir: Path, prices: Pricing) -> list[Usage]:
                     (input_tokens - cached) * rates.get("prompt", 0.0)
                     + cached * rates.get("input_cache_read", 0.0)
                     + output_tokens * rates.get("completion", 0.0),
+                    effort,
+                    usage.get("reasoning_output_tokens", 0),
                 )
             )
     return found
@@ -144,7 +154,12 @@ def _kimi_usages(sessions_dir: Path, prices: Pricing, model: str) -> list[Usage]
     model = f"kimi-{model.rpartition('/')[2]}"
     found: list[Usage] = []
     for path in sorted(sessions_dir.rglob("wire.jsonl")):
+        effort = ""
         for row in read_jsonl(path):
+            # What the CLI was set to think at is a line of its own, and it
+            # stands until another one says otherwise.
+            if row.get("type") == "config.update":
+                effort = row.get("thinkingEffort") or effort
             # A turn is what an exchange costs. Any wider scope the CLI records
             # is the same tokens summed again.
             if row.get("type") != "usage.record" or row.get("usageScope") != "turn":
@@ -164,6 +179,7 @@ def _kimi_usages(sessions_dir: Path, prices: Pricing, model: str) -> list[Usage]
                     + cache_read * rates.get("input_cache_read", 0.0)
                     + cache_write * rates.get("input_cache_write", 0.0)
                     + output_tokens * rates.get("completion", 0.0),
+                    effort,
                 )
             )
     return found
@@ -198,6 +214,8 @@ def _claude_usages(projects_dir: Path, prices: Pricing) -> list[Usage]:
                     + cache_read * rates.get("input_cache_read", 0.0)
                     + cache_write * rates.get("input_cache_write", 0.0)
                     + output_tokens * rates.get("completion", 0.0),
+                    # The CLI writes it beside the message rather than in it.
+                    row.get("effort") or "",
                 )
             )
     return found

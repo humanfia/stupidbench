@@ -1,22 +1,28 @@
 name: stupid bench
 
-# One cell — one flow, one seed — per job, because a hosted runner fits exactly
-# one: the agent alone asks for 6 GB of the 16 GB the runner has.
+# One run is the whole bench: fifteen cells, twenty-four hours of agent time
+# each, and nothing left behind for the run after it.
 #
-# A cell is budgeted at twenty-four hours of agent time and a hosted job is
-# capped at six, so no single job can hold it. The schedule is what spans it:
-# the same job starts every six hours, restores the cell the last one left in
-# the cache, and carries it further. Only the time a cell actually ran counts
-# against its budget, so the waiting between jobs is free, and a job that finds
-# the budget spent has nothing to do and says so.
+# A hosted job is capped at six hours, so no job can hold a cell that is
+# budgeted at twenty-four. Six segments run in turn instead, and each hands
+# every cell it carried to the next as an artifact of this run. Only the time a
+# cell actually ran counts against its budget, so a segment costs it the four
+# and a half hours it gives it and nothing else, and six of those cover the
+# twenty-four with three hours to spare for one segment that dies. A segment
+# that finds the budget spent has nothing to do and says so.
+#
+# Nothing here is cached and no artifact of another run is ever read, so every
+# run stages its cells from nothing: what a run leaves behind is a result, not a
+# state the next one continues.
 
 on:
   schedule:
-    - cron: "0 0,6,12,18 * * 0,1"
+    - cron: "0 0 * * 0"
   workflow_dispatch:
 
-# Never two jobs over one cache lineage: a later start waits rather than
-# replacing the one running.
+# One bench at a time. Two runs share no cell now, but they would spend the same
+# credentials against the same rate limits, and neither would be the run it was
+# meant to be.
 concurrency:
   group: ${{ github.workflow }}
   cancel-in-progress: false
@@ -27,121 +33,80 @@ permissions:
   contents: read
 
 jobs:
-  segment:
-    runs-on: ubuntu-latest
-    timeout-minutes: 350
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        flow:
-          - gpt56sol_max_ralph
-          - gpt56sol_max_stateful
-          - gpt56terra_max_ralph
-          - gpt56terra_max_stateful
-          - gpt56luna_max_ralph
-          - gpt56luna_max_stateful
-          - opus5_max_ralph
-          - opus5_max_stateful
-          - k3_max_ralph
-          - k3_max_stateful
-        seed: [0, 1, 2]
-    env:
-      # Short of the six-hour job cap by enough to pull a sixteen-gigabyte image
-      # ahead of the agent and to redact, cache and publish the cell behind it.
-      SEGMENT_SECONDS: "16200"
-    steps:
-      # The runtime image is sixteen gigabytes, and a runner has room for it
-      # only once the toolchains it will never use are gone. Before anything
-      # installs into the tool cache, which this clears.
-      - name: Free disk space for the runtime image
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
-            /usr/local/share/boost /opt/hostedtoolcache
-          df -h
+  # A segment fails for one cell at a time — an agent that cannot work spends
+  # its segment and says nothing — and the relay is what the rest of the budget
+  # is still in. So every leg waits for the one before it and runs regardless of
+  # what became of it; only a cancelled run stops the relay.
+  segment-1:
+    uses: ./.github/workflows/segment.yaml
+    with:
+      segment: 1
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      CODEX_ACCESS_TOKEN: ${{ secrets.CODEX_ACCESS_TOKEN }}
+      KIMI_MODEL_API_KEY: ${{ secrets.KIMI_MODEL_API_KEY }}
 
-      - uses: actions/checkout@v6
-      - uses: astral-sh/setup-uv@v5
+  segment-2:
+    needs: segment-1
+    if: ${{ !cancelled() }}
+    uses: ./.github/workflows/segment.yaml
+    with:
+      segment: 2
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      CODEX_ACCESS_TOKEN: ${{ secrets.CODEX_ACCESS_TOKEN }}
+      KIMI_MODEL_API_KEY: ${{ secrets.KIMI_MODEL_API_KEY }}
 
-      # A cell belongs to the weekend that started it. Without this the next
-      # weekend's first segment would restore a finished cell, find its budget
-      # spent, and republish last week's results for ever. Sunday and the Monday
-      # after it share a week here; any other day is its own.
-      - name: Name the generation this cell belongs to
-        run: echo "WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
+  segment-3:
+    needs: segment-2
+    if: ${{ !cancelled() }}
+    uses: ./.github/workflows/segment.yaml
+    with:
+      segment: 3
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      CODEX_ACCESS_TOKEN: ${{ secrets.CODEX_ACCESS_TOKEN }}
+      KIMI_MODEL_API_KEY: ${{ secrets.KIMI_MODEL_API_KEY }}
 
-      # The whole cell, sessions included: they are what the next segment adds
-      # to, what the spend is summed over, and what the run is read from. The
-      # credentials are the one thing that never travels with it.
-      - name: Restore what the last segment left
-        uses: actions/cache/restore@v4
-        with:
-          path: cells
-          key: cell-${{ matrix.flow }}-${{ matrix.seed }}-${{ env.WEEK }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: cell-${{ matrix.flow }}-${{ matrix.seed }}-${{ env.WEEK }}-
+  segment-4:
+    needs: segment-3
+    if: ${{ !cancelled() }}
+    uses: ./.github/workflows/segment.yaml
+    with:
+      segment: 4
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      CODEX_ACCESS_TOKEN: ${{ secrets.CODEX_ACCESS_TOKEN }}
+      KIMI_MODEL_API_KEY: ${{ secrets.KIMI_MODEL_API_KEY }}
 
-      # Staging skips a cell the cache already carries, so this both starts the
-      # first segment and is a no-op for every one after it.
-      - name: Stage the cell
-        run: uv run stupidbench prepare --flow ${{ matrix.flow }} --seed ${{ matrix.seed }}
+  segment-5:
+    needs: segment-4
+    if: ${{ !cancelled() }}
+    uses: ./.github/workflows/segment.yaml
+    with:
+      segment: 5
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      CODEX_ACCESS_TOKEN: ${{ secrets.CODEX_ACCESS_TOKEN }}
+      KIMI_MODEL_API_KEY: ${{ secrets.KIMI_MODEL_API_KEY }}
 
-      - name: Run the segment
-        env:
-          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          CODEX_ACCESS_TOKEN: ${{ secrets.CODEX_ACCESS_TOKEN }}
-          KIMI_MODEL_API_KEY: ${{ secrets.KIMI_MODEL_API_KEY }}
-          # Which endpoint a Kimi key is redeemed at, when it is not the default.
-          KIMI_MODEL_BASE_URL: ${{ vars.KIMI_MODEL_BASE_URL }}
-        run: |
-          uv run stupidbench run \
-            --flow ${{ matrix.flow }} \
-            --seed ${{ matrix.seed }} \
-            --seconds "$SEGMENT_SECONDS"
-
-      - name: Stop anything still holding the token
-        if: always()
-        run: docker rm -f $(docker ps -aq --filter name=stupidbench-) 2>/dev/null || true
-
-      # Everything below leaves the runner into a public artifact or a public
-      # cache, so nothing below runs until this has: it deletes what a CLI
-      # stores credentials in and replaces every occurrence of a live token, or
-      # of anything shaped like one, wherever an agent happened to write it.
-      - name: Take the credentials back out
-        id: redact
-        if: always()
-        env:
-          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          CODEX_ACCESS_TOKEN: ${{ secrets.CODEX_ACCESS_TOKEN }}
-          KIMI_MODEL_API_KEY: ${{ secrets.KIMI_MODEL_API_KEY }}
-        run: uv run stupidbench redact
-
-      - name: Hand the cell to the next segment
-        if: always() && steps.redact.outcome == 'success'
-        uses: actions/cache/save@v4
-        with:
-          path: cells
-          key: cell-${{ matrix.flow }}-${{ matrix.seed }}-${{ env.WEEK }}-${{ github.run_id }}-${{ github.run_attempt }}
-
-      # Every segment publishes the cell as it then stands, so the artifact of
-      # the last one holds the whole run: every session the agent kept, every
-      # score and event, and the work it leaves behind.
-      - name: Publish the cell
-        if: always() && steps.redact.outcome == 'success'
-        uses: actions/upload-artifact@v7
-        with:
-          name: cell-${{ matrix.flow }}-${{ matrix.seed }}
-          path: cells
-          include-hidden-files: true
-          if-no-files-found: ignore
-          overwrite: true
-          retention-days: 30
+  segment-6:
+    needs: segment-5
+    if: ${{ !cancelled() }}
+    uses: ./.github/workflows/segment.yaml
+    with:
+      segment: 6
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      CODEX_ACCESS_TOKEN: ${{ secrets.CODEX_ACCESS_TOKEN }}
+      KIMI_MODEL_API_KEY: ${{ secrets.KIMI_MODEL_API_KEY }}
 
   # A segment knows one cell; the report reads them together, so that the seeds
-  # of a flow can be averaged into one curve.
+  # of a flow can be averaged into one curve. It is the last thing the run does,
+  # and every cell it reads is one this run finished.
   report:
-    needs: segment
-    if: always()
+    needs: segment-6
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -154,7 +119,15 @@ jobs:
         with:
           pattern: cell-*
           merge-multiple: true
-          path: cells
+          path: archives
+
+      - name: Unpack every cell the run carried
+        run: |
+          shopt -s nullglob
+          for archive in archives/*.tgz; do
+            tar -xzf "$archive"
+          done
+          rm -rf archives
 
       - name: Draw the curves
         run: uv run stupidbench report --out report > /dev/null
