@@ -4,12 +4,20 @@ name: stupid bench
 # each, and nothing left behind for the run after it.
 #
 # A hosted job is capped at six hours, so no job can hold a cell that is
-# budgeted at twenty-four. Six segments run in turn instead, and each hands
+# budgeted at twenty-four. Eight segments run in turn instead, and each hands
 # every cell it carried to the next as an artifact of this run. Only the time a
 # cell actually ran counts against its budget, so a segment costs it the four
-# and a half hours it gives it and nothing else, and six of those cover the
-# twenty-four with three hours to spare for one segment that dies. A segment
-# that finds the budget spent has nothing to do and says so.
+# and a half hours it gives it and nothing else, and a segment that finds the
+# budget spent has nothing to do and says so.
+#
+# Six segments would cover the twenty-four hours and no more. A job that dies
+# takes a whole segment with it — twice in ninety, the first time this ran:
+# once the runner could not fetch an action, once it stopped answering
+# mid-segment — and there is no retrying a job in Actions. What retries it is
+# the segment after it, which takes the cell back from the last artifact and
+# carries it on, so what a lost segment costs is capacity rather than work.
+# Eight give a cell thirty-six hours of it, which is two whole segments more
+# than its budget can spend.
 #
 # Nothing here is cached and no artifact of another run is ever read, so every
 # run stages its cells from nothing: what a run leaves behind is a result, not a
@@ -101,11 +109,33 @@ jobs:
       CODEX_ACCESS_TOKEN: ${{ secrets.CODEX_ACCESS_TOKEN }}
       KIMI_MODEL_API_KEY: ${{ secrets.KIMI_MODEL_API_KEY }}
 
+  segment-7:
+    needs: segment-6
+    if: ${{ !cancelled() }}
+    uses: ./.github/workflows/segment.yaml
+    with:
+      segment: 7
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      CODEX_ACCESS_TOKEN: ${{ secrets.CODEX_ACCESS_TOKEN }}
+      KIMI_MODEL_API_KEY: ${{ secrets.KIMI_MODEL_API_KEY }}
+
+  segment-8:
+    needs: segment-7
+    if: ${{ !cancelled() }}
+    uses: ./.github/workflows/segment.yaml
+    with:
+      segment: 8
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      CODEX_ACCESS_TOKEN: ${{ secrets.CODEX_ACCESS_TOKEN }}
+      KIMI_MODEL_API_KEY: ${{ secrets.KIMI_MODEL_API_KEY }}
+
   # A segment knows one cell; the report reads them together, so that the seeds
   # of a flow can be averaged into one curve. It is the last thing the run does,
   # and every cell it reads is one this run finished.
   report:
-    needs: segment-6
+    needs: segment-8
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 30

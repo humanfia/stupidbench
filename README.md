@@ -33,9 +33,10 @@ of the CLI it runs — `CLAUDE_CODE_OAUTH_TOKEN`, `CODEX_ACCESS_TOKEN` or
 
 The bench runs itself: [`stupid bench`](.github/workflows/bench.yaml) starts
 every Sunday and carries every cell through its full twenty-four hours before it
-ends — six jobs in turn, each handing on the cell it carried, because a hosted
-job is capped at six hours. A run leaves nothing behind for the next one to
-continue. Run it early from the Actions tab.
+ends — eight jobs in turn, each handing on the cell it carried, because a hosted
+job is capped at six hours and two of the eight are there for the jobs that die.
+A run leaves nothing behind for the next one to continue. Run it early from the
+Actions tab.
 
 The same four commands work on any host:
 
