@@ -135,7 +135,10 @@ def plot(curves: pd.DataFrame, path: Path) -> None:
     sns.set_theme(style="whitegrid", context="talk")
     figure, axes = plt.subplots(1, len(METRICS), figsize=(21, 6))
     for axis, (metric, label) in zip(axes, METRICS, strict=True):
-        panel = curves[curves["metric"] == metric]
+        # The origin is a cell that has spent nothing, which no log axis can
+        # place. What it stands for — the score every cell starts at — is in the
+        # report beside these.
+        panel = curves[(curves["metric"] == metric) & (curves["x"] > 0)]
         if panel.empty:
             axis.set_axis_off()
             continue
@@ -151,6 +154,13 @@ def plot(curves: pd.DataFrame, path: Path) -> None:
         )
         axis.set_xlabel(label)
         axis.set_ylabel("cycles (lower is better)")
+        # The first minutes take a cell from a hundred and fifty thousand cycles
+        # to about two thousand, the twenty-four hours after them are worth a
+        # few hundred, and the flows that differ do so across three decades of
+        # spend. On linear axes that is a cliff and then a flat line on the
+        # floor: the whole bench drawn as nothing.
+        axis.set_xscale("log")
+        axis.set_yscale("log")
         axis.legend(title="", fontsize="x-small")
     figure.suptitle("stupid bench — mean over seeds")
     figure.tight_layout()
