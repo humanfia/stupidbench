@@ -1,0 +1,71 @@
+name: artifact probe
+
+# Temporary. Answers one question the artifact actions do not document: when a
+# run is re-run, can a job still take back what an earlier attempt published?
+# The relay a bench run is carried by is artifacts, so what a manual re-run can
+# still see is what a run can survive.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "written by attempt ${{ github.run_attempt }}" > probe.txt
+      - uses: actions/upload-artifact@v7
+        with:
+          name: probe
+          path: probe.txt
+          overwrite: true
+
+  take:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Take it back the way a segment does
+        id: plain
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: probe
+          path: plain
+
+      - name: Take it back through the run's own API
+        id: viatoken
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: probe
+          path: viatoken
+          run-id: ${{ github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Say what each found
+        run: |
+          echo "PROBE attempt=${{ github.run_attempt }}"
+          echo "PROBE plain=${{ steps.plain.outcome }} token=${{ steps.viatoken.outcome }}"
+          echo "PROBE plain-content=$(cat plain/probe.txt 2>/dev/null || echo none)"
+          echo "PROBE token-content=$(cat viatoken/probe.txt 2>/dev/null || echo none)"
+
+      - name: Publish under the name the first attempt used
+        continue-on-error: true
+        id: republish
+        uses: actions/upload-artifact@v7
+        with:
+          name: probe
+          path: plain
+          overwrite: true
+
+      - run: echo "PROBE republish=${{ steps.republish.outcome }}"
+
+      # So that a re-run has something failed to re-run.
+      - name: Fail once, so this can be re-run
+        if: github.run_attempt == '1'
+        run: exit 1
