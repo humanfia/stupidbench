@@ -54,12 +54,14 @@ A cell is done when it has spent its twenty-four hours of agent time; time
 between segments is not charged to it.
 
 A flow is a model and an effort. The models are `gpt56sol`, `gpt56terra`,
-`gpt56luna`, `opus5`, `dsv4flash` and `k3`, all at `max`, which makes flows like
-`opus5_max`, six in all, each run on the three seeds 0, 1 and 2. A model is run
-by the CLI it belongs to, except `dsv4flash` — DeepSeek serves an
-Anthropic-shaped API, so `deepseek-v4-flash` is run by the claude CLI pointed at
-it. Every flow meets the task with a new session each turn, so what an agent
-carries through its twenty-four hours is only what it wrote down.
+`gpt56luna`, `opus5` and `dsv4flash`, all at `max`, which makes flows like
+`opus5_max`, five in all, each run on the three seeds 0, 1 and 2. A sixth,
+`k3_max`, is defined and runnable but out of the matrix while its plan has no
+quota left. A model is run by the CLI it belongs to, except `dsv4flash` —
+DeepSeek serves an Anthropic-shaped API, so `deepseek-v4-flash` is run by the
+claude CLI pointed at it. Every flow meets the task with a new session each
+turn, so what an agent carries through its twenty-four hours is only what it
+wrote down.
 
 ## Results
 

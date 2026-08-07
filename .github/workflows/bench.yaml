@@ -1,6 +1,6 @@
 name: stupid bench
 
-# One run is the whole bench: eighteen cells, twenty-four hours of agent time
+# One run is the whole bench: fifteen cells, twenty-four hours of agent time
 # each, and nothing left behind for the run after it.
 #
 # A hosted job is capped at six hours, so no job can hold a cell that is
@@ -39,7 +39,7 @@ on:
 # credentials against the same rate limits, and neither would be the run it was
 # meant to be.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}
   cancel-in-progress: false
 
 # This repository is public, and only these two events can carry a secret: no

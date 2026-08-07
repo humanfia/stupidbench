@@ -32,13 +32,20 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Every flow but `k3_max`, which is out until its plan has quota again:
+        # a provider answering 403 spends a cell's day as fast as one answering
+        # properly, and nothing here can buy more of it.
         flow:
+          - gpt56sol_max
+          - gpt56terra_max
+          - gpt56luna_max
+          - opus5_max
           - dsv4flash_max
-        seed: [0]
+        seed: [0, 1, 2]
     env:
       # Short of the six-hour job cap by enough to pull a sixteen-gigabyte image
       # ahead of the agent and to redact, pack and publish the cell behind it.
-      SEGMENT_SECONDS: "300"
+      SEGMENT_SECONDS: "16200"
       ARCHIVE: cell-${{ matrix.flow }}-${{ matrix.seed }}.tgz
     steps:
       # The runtime image is sixteen gigabytes, and a runner has room for it
