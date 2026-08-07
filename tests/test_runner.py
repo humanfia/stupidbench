@@ -1,3 +1,4 @@
+import time
 from pathlib import Path
 
 import pytest
@@ -199,6 +200,32 @@ def test_proxy_config_denies_a_host_without_ever_looking_it_up() -> None:
     # the proxy that resolves and that the agent's network cannot reach.
     assert f"parent 1000 http 10.0.0.2 {runner.RESOLVER_PORT}" in config
     assert "nserver 127.0.0.11" in runner._resolver_config()
+
+
+def test_a_segment_getting_nowhere_is_stopped_rather_than_left_to_spend(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A provider refusing every request looks exactly like an agent thinking:
+    # the container is up and the loop is looping. A Kimi plan that ran out of
+    # its cycle spent four and a half hours a segment that way and left nothing
+    # behind each time.
+    monkeypatch.setattr(runner, "TICK_SECONDS", 0.01)
+    monkeypatch.setattr(runner, "SCORELESS_SECONDS", 0.05)
+    cell = Cell("k3_max", 0, tmp_path / "cell")
+    runner.prepare(cell)
+
+    class _Agent:
+        status = "running"
+
+        def reload(self) -> None:
+            pass
+
+    started = time.monotonic()
+    runner._watch(cell, _Agent(), limit=600, scored=0)
+
+    assert time.monotonic() - started < 60
+    # It ran, and what it ran is charged to the cell either way.
+    assert [event.type for event in cell.events()] == ["tick"] * len(cell.events())
 
 
 def test_run_refuses_a_cell_that_was_never_staged(tmp_path: Path) -> None:

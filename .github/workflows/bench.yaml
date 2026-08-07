@@ -39,7 +39,7 @@ on:
 # credentials against the same rate limits, and neither would be the run it was
 # meant to be.
 concurrency:
-  group: ${{ github.workflow }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 # This repository is public, and only these two events can carry a secret: no

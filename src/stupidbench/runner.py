@@ -22,6 +22,7 @@ from stupidbench.cell import (
     DEEPSEEK,
     FLOWS,
     HOME_VARIABLES,
+    SCORELESS_SECONDS,
     STATE_DIRS,
     TOKEN_VARIABLES,
     Cell,
@@ -186,6 +187,9 @@ def run(cell: Cell, seconds: int) -> str:
     if remaining <= 0:
         return "done"
     limit = int(min(seconds, remaining))
+    # What the evaluator had heard before this segment, which is what says
+    # whether the segment is getting anywhere.
+    scored = len(cell.scores())
     flow = FLOWS[cell.flow]
     client = docker.from_env()
     for image in (PROXY_IMAGE, IMAGE):
@@ -336,7 +340,7 @@ def run(cell: Cell, seconds: int) -> str:
         agent.start()
         cell.record("start")
         started = True
-        _watch(cell, agent, limit)
+        _watch(cell, agent, limit, scored)
         (cell.cell_dir / "agent.log").write_bytes(agent.logs(tail=400))
     finally:
         if started:
@@ -355,15 +359,30 @@ def run(cell: Cell, seconds: int) -> str:
     return "ran"
 
 
-def _watch(cell: Cell, agent, limit: int) -> None:
-    """Ticks while the agent runs, so a segment that dies still bounds itself."""
-    deadline = time.monotonic() + limit + TICK_SECONDS
+def _watch(cell: Cell, agent, limit: int, scored: int) -> None:
+    """Ticks while the agent runs, so a segment that dies still bounds itself.
+
+    And gives up on one that is getting nowhere. A provider that refuses every
+    request looks exactly like an agent thinking — the container is up, the loop
+    is looping — and it spends the budget just as fast: a Kimi plan that ran out
+    of its cycle took four and a half hours a segment and left nothing behind
+    each time. Hours of agent time with nothing recorded is the one thing that
+    cannot mean anything else, so the segment ends there rather than spending
+    what is left of it.
+    """
+    started = time.monotonic()
+    deadline = started + limit + TICK_SECONDS
     while time.monotonic() < deadline:
         time.sleep(TICK_SECONDS)
         agent.reload()
         if agent.status != "running":
             return
         cell.record("tick")
+        if (
+            time.monotonic() - started >= SCORELESS_SECONDS
+            and len(cell.scores()) == scored
+        ):
+            return
 
 
 def _await_evaluator(evaluator) -> None:
