@@ -18,6 +18,8 @@ on:
         required: true
       KIMI_MODEL_API_KEY:
         required: true
+      DEEPSEEK_API_KEY:
+        required: true
 
 jobs:
   # One cell — one flow, one seed — per job, because a hosted runner fits
@@ -35,6 +37,7 @@ jobs:
           - gpt56terra_max
           - gpt56luna_max
           - opus5_max
+          - dsv4flash_max
           - k3_max
         seed: [0, 1, 2]
     env:
@@ -89,6 +92,7 @@ jobs:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           CODEX_ACCESS_TOKEN: ${{ secrets.CODEX_ACCESS_TOKEN }}
           KIMI_MODEL_API_KEY: ${{ secrets.KIMI_MODEL_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           # Which endpoint a Kimi key is redeemed at, when it is not the default.
           KIMI_MODEL_BASE_URL: ${{ vars.KIMI_MODEL_BASE_URL }}
         run: |
@@ -112,6 +116,7 @@ jobs:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           CODEX_ACCESS_TOKEN: ${{ secrets.CODEX_ACCESS_TOKEN }}
           KIMI_MODEL_API_KEY: ${{ secrets.KIMI_MODEL_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
         run: uv run stupidbench redact
 
       - name: Pack the cell

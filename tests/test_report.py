@@ -1,8 +1,20 @@
 import json
+from math import log10
 from pathlib import Path
 
+import pandas as pd
+
 from stupidbench.cell import INIT_SCORE, Cell
-from stupidbench.report import History, Point, frame, markdown, read_history, report
+from stupidbench.report import (
+    HEIGHT,
+    History,
+    Point,
+    frame,
+    markdown,
+    read_history,
+    report,
+    window,
+)
 from stupidbench.usage import Tier
 
 PRICES = {"gpt-5.6-sol": [Tier(0, {"prompt": 1.0, "completion": 10.0})]}
@@ -96,6 +108,30 @@ def test_report_draws_the_curves_and_writes_the_summary(tmp_path: Path) -> None:
     # A cell whose CLI kept no session says nothing about what it ran at.
     assert "| `gpt56sol_max` | — | 2 | 100,000 | 105,000 |" in text
     assert "curves.png" in text
+
+
+def test_window_gives_the_late_hours_most_of_the_height() -> None:
+    # The first minutes are worth two decades and the day after them a few
+    # hundred cycles. Drawn to fit everything, the day is a line on the floor.
+    rows = [
+        {"flow": "f", "seed": 0, "metric": "hours", "x": x, "score": score}
+        for x, score in ((0.1, INIT_SCORE), (0.5, 2_000), (6.0, 1_400), (24.0, 1_000))
+    ]
+
+    bottom, top = window(pd.DataFrame(rows))
+
+    height = log10(top / bottom)
+    assert log10(1_400 / 1_000) / height >= HEIGHT
+    # What fell before the first quarter of the time runs off the top rather
+    # than setting the scale for everything after it.
+    assert top < INIT_SCORE
+    assert bottom < 1_000
+
+
+def test_window_leaves_the_axis_alone_when_nothing_improved() -> None:
+    rows = [{"flow": "f", "seed": 0, "metric": "hours", "x": 1.0, "score": 900.0}]
+
+    assert window(pd.DataFrame(rows)) is None
 
 
 def test_report_says_so_when_nothing_has_run(tmp_path: Path) -> None:

@@ -25,9 +25,9 @@ uv sync
 
 Cells run in Docker, so a host needs Docker Engine 28 or newer. The image a
 cell runs in is `ghcr.io/humanfia/flowbench-runtime`, by the variant its task
-calls for; it is public and nothing here builds it. Each cell is given the token
-of the CLI it runs — `CLAUDE_CODE_OAUTH_TOKEN`, `CODEX_ACCESS_TOKEN` or
-`KIMI_MODEL_API_KEY` — from the environment.
+calls for; it is public and nothing here builds it. Each cell is given the key
+of the provider it talks to — `CLAUDE_CODE_OAUTH_TOKEN`, `CODEX_ACCESS_TOKEN`,
+`KIMI_MODEL_API_KEY` or `DEEPSEEK_API_KEY` — from the environment.
 
 ## Usage
 
@@ -36,7 +36,8 @@ every Sunday and carries every cell through its full twenty-four hours before it
 ends — eight jobs in turn, each handing on the cell it carried, because a hosted
 job is capped at six hours and two of the eight are there for the jobs that die.
 A run leaves nothing behind for the next one to continue. Run it early from the
-Actions tab.
+Actions tab, and re-run its failed jobs from there if Actions drops any: a
+second attempt takes each cell back where the first left it.
 
 The same four commands work on any host:
 
@@ -53,10 +54,12 @@ A cell is done when it has spent its twenty-four hours of agent time; time
 between segments is not charged to it.
 
 A flow is a model and an effort. The models are `gpt56sol`, `gpt56terra`,
-`gpt56luna`, `opus5` and `k3`, all at `max`, which makes flows like `opus5_max`,
-five in all, each run on the three seeds 0, 1 and 2. Every flow meets the task
-with a new session each turn, so what an agent carries through its twenty-four
-hours is only what it wrote down.
+`gpt56luna`, `opus5`, `dsv4flash` and `k3`, all at `max`, which makes flows like
+`opus5_max`, six in all, each run on the three seeds 0, 1 and 2. A model is run
+by the CLI it belongs to, except `dsv4flash` — DeepSeek serves an
+Anthropic-shaped API, so `deepseek-v4-flash` is run by the claude CLI pointed at
+it. Every flow meets the task with a new session each turn, so what an agent
+carries through its twenty-four hours is only what it wrote down.
 
 ## Results
 
@@ -77,8 +80,9 @@ This repository is public, so its artifacts, caches and logs are too. Nothing
 that runs here is reachable from a pull request: only the schedule and a manual
 dispatch can carry a token, and both need write access.
 
-A cell is given exactly one credential — the token of the CLI it runs, never the
-others — and reaches the network only through a proxy that allows the model
+A cell is given exactly one credential — the key of the provider it talks to,
+never any other, and a CLI running someone else's model is given theirs and not
+its own — and reaches the network only through a proxy that allows the model
 providers and denies everything else. It can look up nothing else either, so not
 even a hostname it asks for leaves carrying something, and a token cannot be
 sent anywhere it is not already used. Before anything leaves a runner,

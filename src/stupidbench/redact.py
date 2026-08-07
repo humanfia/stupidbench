@@ -15,7 +15,7 @@ import shutil
 from collections.abc import Iterable
 from pathlib import Path
 
-from stupidbench.cell import TOKEN_VARIABLES
+from stupidbench.cell import CREDENTIAL_VARIABLES
 
 #: Files and directories a CLI keeps credentials in. They are never wanted in
 #: an artifact, whatever they happen to hold at the time.
@@ -56,7 +56,7 @@ def secrets() -> list[str]:
     """
     found = {
         value
-        for name in TOKEN_VARIABLES.values()
+        for name in CREDENTIAL_VARIABLES
         if (value := os.environ.get(name, "").strip())
     }
     return sorted(found, key=len, reverse=True)

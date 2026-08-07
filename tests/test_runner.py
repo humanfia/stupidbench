@@ -113,7 +113,7 @@ def test_agent_environment_gives_a_cell_only_its_own_token(
     monkeypatch.setenv("CODEX_ACCESS_TOKEN", "codex-token")
     monkeypatch.setenv("KIMI_MODEL_API_KEY", "kimi-token")
 
-    environment = runner._agent_environment("codex", "gpt-5.6-sol", "max")
+    environment = runner._agent_environment(FLOWS["gpt56sol_max"])
 
     assert environment["CODEX_ACCESS_TOKEN"] == "codex-token"
     assert "CLAUDE_CODE_OAUTH_TOKEN" not in environment
@@ -128,7 +128,7 @@ def test_agent_environment_configures_kimi_without_a_login(
 ) -> None:
     monkeypatch.setenv("KIMI_MODEL_API_KEY", "kimi-token")
 
-    environment = runner._agent_environment("kimi", "kimi-code/k3", "max")
+    environment = runner._agent_environment(FLOWS["k3_max"])
 
     # Naming the model in the environment is what makes it the default one; the
     # managed provider it would otherwise use needs an interactive login.
@@ -139,13 +139,37 @@ def test_agent_environment_configures_kimi_without_a_login(
     assert "tool_use" in environment["KIMI_MODEL_CAPABILITIES"]
 
 
+def test_agent_environment_sends_a_borrowed_cli_to_the_provider_it_borrows_from(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The claude CLI on a DeepSeek model is the same CLI: what changes is the
+    # host it sends to and the key it sends with. The key it would otherwise
+    # hold is no good there, and is not in the cell at all.
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "claude-token")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "deepseek-key")
+
+    environment = runner._agent_environment(FLOWS["dsv4flash_max"])
+
+    assert environment["ANTHROPIC_BASE_URL"] == "https://api.deepseek.com/anthropic"
+    assert environment["ANTHROPIC_AUTH_TOKEN"] == "deepseek-key"
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in environment
+    assert "DEEPSEEK_API_KEY" not in environment
+    # The small model the CLI reaches for between turns is served here too, and
+    # asking this provider for the other one's would be asking for nothing.
+    assert environment["ANTHROPIC_DEFAULT_HAIKU_MODEL"] == "deepseek-v4-flash"
+    # A model the CLI does not know is taken to hold two hundred thousand
+    # tokens, and a session would be compacted against that rather than against
+    # the million this one holds.
+    assert environment["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] == "1048576"
+
+
 def test_agent_environment_omits_a_token_the_runner_was_not_given(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
 
     assert "CLAUDE_CODE_OAUTH_TOKEN" not in runner._agent_environment(
-        "claude", "claude-opus-5", "max"
+        FLOWS["opus5_max"]
     )
 
 

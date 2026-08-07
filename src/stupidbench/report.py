@@ -11,6 +11,7 @@ coverage ends rather than extrapolated.
 from bisect import bisect_right
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from math import log10
 from pathlib import Path
 
 import matplotlib
@@ -32,6 +33,14 @@ METRICS = (
     ("output_tokens", "output tokens"),
     ("hours", "agent hours"),
 )
+
+#: The part of a cell's time the vertical axis is set by, and how much of the
+#: height that part is given. A cell falls two decades in its first minutes and
+#: spends the rest of its day on the last few hundred cycles; the day is what
+#: the bench is about, so it gets three quarters of the picture and the fall
+#: runs off the top.
+LATE = 0.25
+HEIGHT = 0.75
 
 
 @dataclass(frozen=True)
@@ -130,8 +139,30 @@ def frame(histories: list[History]) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=["flow", "seed", "metric", "x", "score"])
 
 
+def window(curves: pd.DataFrame) -> tuple[float, float] | None:
+    """The vertical limits to draw in, or nothing when nothing needs one.
+
+    Set by what was scored after the first quarter of the time — those points
+    take three quarters of the height, standing just off the bottom of it — so
+    that what the agents did with their day is not a flat line under the two
+    decades their first minutes fell. Time is the same for every panel, so all
+    three are drawn in one window and can be read against each other.
+    """
+    hours = curves[curves["metric"] == "hours"]
+    if hours.empty:
+        return None
+    late = hours[hours["x"] >= LATE * hours["x"].max()]["score"]
+    low, high = float(late.min()), float(late.max())
+    if low <= 0 or high <= low:
+        return None
+    span = log10(high / low) / HEIGHT
+    bottom = low / 10 ** (0.05 * span)
+    return bottom, bottom * 10**span
+
+
 def plot(curves: pd.DataFrame, path: Path) -> None:
     """Draws one panel per metric, each seed group averaged into one line."""
+    limits = window(curves)
     sns.set_theme(style="whitegrid", context="talk")
     figure, axes = plt.subplots(1, len(METRICS), figsize=(21, 6))
     for axis, (metric, label) in zip(axes, METRICS, strict=True):
@@ -161,6 +192,8 @@ def plot(curves: pd.DataFrame, path: Path) -> None:
         # floor: the whole bench drawn as nothing.
         axis.set_xscale("log")
         axis.set_yscale("log")
+        if limits:
+            axis.set_ylim(*limits)
         axis.legend(title="", fontsize="x-small")
     figure.suptitle("stupid bench — mean over seeds")
     figure.tight_layout()

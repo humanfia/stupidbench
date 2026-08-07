@@ -19,11 +19,13 @@ from docker.errors import APIError, ImageNotFound
 
 from stupidbench.cell import (
     BUDGET_SECONDS,
+    DEEPSEEK,
     FLOWS,
     HOME_VARIABLES,
     STATE_DIRS,
     TOKEN_VARIABLES,
     Cell,
+    Flow,
     Tool,
 )
 
@@ -55,6 +57,7 @@ ALLOWED_HOSTS = (
     "auth.openai.com",
     "api.kimi.com",
     "api.moonshot.ai",
+    DEEPSEEK.host,
 )
 
 AGENT_MEMORY_MB = 6144
@@ -312,7 +315,7 @@ def run(cell: Cell, seconds: int) -> str:
             name=f"{name}-agent",
             hostname="agent",
             working_dir="/workspace",
-            environment=_agent_environment(flow.tool, flow.model, flow.effort),
+            environment=_agent_environment(flow),
             user=f"{os.getuid()}:{os.getgid()}",
             mem_limit=f"{AGENT_MEMORY_MB}m",
             nano_cpus=AGENT_CPU * 1_000_000_000,
@@ -380,12 +383,12 @@ def _await_evaluator(evaluator) -> None:
     raise RuntimeError("evaluator never became ready")
 
 
-def _agent_environment(tool: Tool, model: str, effort: str) -> dict[str, str]:
+def _agent_environment(flow: Flow) -> dict[str, str]:
     proxy_url = f"http://{PROXY_HOST}:{PROXY_PORT}"
     no_proxy = f"localhost,127.0.0.1,::1,{EVALUATOR_HOST}"
     environment = {
         "HOME": "/workspace",
-        HOME_VARIABLES[tool]: f"/workspace/{STATE_DIRS[tool]}",
+        HOME_VARIABLES[flow.tool]: f"/workspace/{STATE_DIRS[flow.tool]}",
         "HTTP_PROXY": proxy_url,
         "HTTPS_PROXY": proxy_url,
         "NO_PROXY": no_proxy,
@@ -393,14 +396,31 @@ def _agent_environment(tool: Tool, model: str, effort: str) -> dict[str, str]:
         "https_proxy": proxy_url,
         "no_proxy": no_proxy,
     }
-    token = os.environ.get(TOKEN_VARIABLES[tool])
-    if token:
-        environment[TOKEN_VARIABLES[tool]] = token
-    if tool == "kimi":
+    token = os.environ.get(
+        flow.endpoint.token_variable if flow.endpoint else TOKEN_VARIABLES[flow.tool]
+    )
+    if flow.endpoint:
+        # The same CLI, sent somewhere else. It reads a key from its environment
+        # as a bearer, so what a cell gets is the endpoint's key under the name
+        # the CLI reads and never the one of the provider the CLI was written
+        # for. The small model it reaches for between turns has to be named too:
+        # left alone it asks this provider for one that only the other has.
+        environment |= {
+            "ANTHROPIC_BASE_URL": flow.endpoint.base_url,
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL": flow.model,
+            "ANTHROPIC_SMALL_FAST_MODEL": flow.model,
+        }
+        if token:
+            environment["ANTHROPIC_AUTH_TOKEN"] = token
+    elif token:
+        environment[TOKEN_VARIABLES[flow.tool]] = token
+    if flow.context_window:
+        environment["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = str(flow.context_window)
+    if flow.tool == "kimi":
         environment |= _KIMI_ENVIRONMENT | {
             "KIMI_MODEL_BASE_URL": KIMI_BASE_URL,
-            "KIMI_MODEL_NAME": model.rpartition("/")[2],
-            "KIMI_MODEL_THINKING_EFFORT": effort,
+            "KIMI_MODEL_NAME": flow.model.rpartition("/")[2],
+            "KIMI_MODEL_THINKING_EFFORT": flow.effort,
         }
     return environment
 

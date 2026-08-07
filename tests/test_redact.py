@@ -104,8 +104,11 @@ def test_secrets_are_read_from_the_environment_longest_first(
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "short")
     monkeypatch.setenv("CODEX_ACCESS_TOKEN", "a-much-longer-token")
     monkeypatch.setenv("KIMI_MODEL_API_KEY", "   ")
+    # A key for a provider whose CLI is not its own is a credential like any
+    # other, and a runner that held one has to take it back out.
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "deepseek-key")
 
-    assert secrets() == ["a-much-longer-token", "short"]
+    assert secrets() == ["a-much-longer-token", "deepseek-key", "short"]
 
 
 def test_redact_removes_a_repository_a_token_could_be_committed_into(

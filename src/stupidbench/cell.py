@@ -41,12 +41,49 @@ TOKEN_VARIABLES: dict[Tool, str] = {
 
 
 @dataclass(frozen=True)
+class Endpoint:
+    """Where a model is served, when that is not the CLI's own provider.
+
+    A CLI reaches the provider it was written for by itself. Pointed at another,
+    it needs the host to let out, the address to send to, and a key of its own —
+    and the key it would otherwise hold is no good there, so a cell that talks
+    here is never given one.
+    """
+
+    host: str
+    base_url: str
+    token_variable: str
+
+
+#: DeepSeek serves its models behind an Anthropic-shaped API, which is what lets
+#: the claude CLI run one of them.
+DEEPSEEK = Endpoint(
+    "api.deepseek.com",
+    "https://api.deepseek.com/anthropic",
+    "DEEPSEEK_API_KEY",
+)
+
+#: Every variable a credential can arrive in: one per CLI, and one more for each
+#: endpoint that is not the CLI's own provider. Redaction takes all of them back
+#: out of a cell, whichever one it was given.
+CREDENTIAL_VARIABLES = (*TOKEN_VARIABLES.values(), DEEPSEEK.token_variable)
+
+
+@dataclass(frozen=True)
 class Flow:
     """One column of the matrix: a CLI, a model, and how hard it is asked."""
 
     tool: Tool
     model: str
     effort: str
+    #: Where the model is served, when the CLI's own provider is not where it
+    #: is. Nothing else about the flow changes: the same CLI, the same loop.
+    endpoint: Endpoint | None = None
+    #: What the CLI is to take the model's context window to be, where it has no
+    #: way of knowing. Claude Code assumes two hundred thousand tokens for a
+    #: model it does not recognise, and compacts the session against that rather
+    #: than against what the model really holds.
+    context_window: int | None = None
 
 
 FLOWS: dict[str, Flow] = {
@@ -54,6 +91,7 @@ FLOWS: dict[str, Flow] = {
     "gpt56terra_max": Flow("codex", "gpt-5.6-terra", "max"),
     "gpt56luna_max": Flow("codex", "gpt-5.6-luna", "max"),
     "opus5_max": Flow("claude", "claude-opus-5", "max"),
+    "dsv4flash_max": Flow("claude", "deepseek-v4-flash", "max", DEEPSEEK, 1_048_576),
     "k3_max": Flow("kimi", "kimi-code/k3", "max"),
 }
 
