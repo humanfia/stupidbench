@@ -164,6 +164,27 @@ def test_agent_environment_sends_a_borrowed_cli_to_the_provider_it_borrows_from(
     assert environment["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] == "1048576"
 
 
+def test_agent_environment_lifts_the_cli_cap_on_one_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Claude Code ends a response at sixty-four thousand tokens whatever the
+    # model can write, and the turn that reaches the cap dies there having
+    # recorded nothing — an hour of thinking thrown away, and the segment no
+    # closer to a score. Two `opus5_max` cells lost their first three turns each
+    # to it. Every model a claude CLI is pointed at here serves at least twice
+    # what the CLI would allow it.
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "claude-token")
+    monkeypatch.setenv("CODEX_ACCESS_TOKEN", "codex-token")
+
+    claude = runner._agent_environment(FLOWS["opus5_max"])
+
+    assert claude["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] == "128000"
+    # A CLI that reads none of this is told none of it.
+    assert "CLAUDE_CODE_MAX_OUTPUT_TOKENS" not in runner._agent_environment(
+        FLOWS["gpt56sol_max"]
+    )
+
+
 def test_agent_environment_omits_a_token_the_runner_was_not_given(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

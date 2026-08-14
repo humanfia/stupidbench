@@ -1,6 +1,6 @@
 name: stupid bench
 
-# One run is the whole bench: fifteen cells, twenty-four hours of agent time
+# One run is the whole bench: eighteen cells, twenty-four hours of agent time
 # each, and nothing left behind for the run after it.
 #
 # A hosted job is capped at six hours, so no job can hold a cell that is
@@ -149,6 +149,12 @@ jobs:
   # A segment knows one cell; the report reads them together, so that the seeds
   # of a flow can be averaged into one curve. It is the last thing the run does,
   # and every cell it reads is one this run finished.
+  #
+  # It is also the only job here that can fail the run. Everything before it is
+  # a leg of a relay that has legs to spare, so a segment that failed says
+  # nothing about what the run came to; the report is what nothing after it can
+  # make good, and it fails when a cell is missing the day it was given or spent
+  # that day without ever beating the score it started at.
   report:
     needs: segment-8
     if: ${{ !cancelled() }}
@@ -174,14 +180,31 @@ jobs:
           done
           rm -rf archives
 
+      # This is what says whether the run is whole, and it says it by failing.
+      # It is held here rather than taken now, because a run that is short is
+      # the one that most needs the report saying what it is short of, and a
+      # step that fails takes every step after it with it.
       - name: Draw the curves
-        run: uv run stupidbench report --out report > /dev/null
+        id: curves
+        continue-on-error: true
+        run: uv run stupidbench report --out report --whole > /dev/null
 
       - uses: actions/upload-artifact@v7
+        if: always()
         with:
           name: report
           path: report
           retention-days: 90
 
       - name: Write the summary
-        run: cat report/report.md >> "$GITHUB_STEP_SUMMARY"
+        if: always()
+        run: |
+          if [ -f report/report.md ]; then
+            cat report/report.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Take the verdict
+        if: steps.curves.outcome != 'success'
+        run: |
+          echo "::error::this run is short of a result; the summary says which"
+          exit 1

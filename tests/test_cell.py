@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import yaml
+
 from stupidbench.cell import (
     BUDGET_SECONDS,
     FLOWS,
@@ -95,3 +97,22 @@ def test_all_cells_cover_the_matrix(tmp_path: Path) -> None:
         (flow, seed) for flow in FLOWS for seed in SEEDS
     }
     assert cells[0].cell_dir == tmp_path / cells[0].flow / str(cells[0].seed)
+
+
+def test_the_workflow_fans_out_over_exactly_the_flows_marked_for_it() -> None:
+    # The matrix is written twice — the flows marked for it here, and the list a
+    # segment fans out over — and nothing at run time notices the two
+    # disagreeing. A flow dropped from the workflow is a column that never
+    # appears; one added to it and not marked here is a column no run is judged
+    # on. Either way the report comes out looking whole.
+    segment = yaml.safe_load(
+        (
+            Path(__file__).resolve().parents[1] / ".github/workflows/segment.yaml"
+        ).read_text(encoding="utf-8")
+    )
+    matrix = segment["jobs"]["cell"]["strategy"]["matrix"]
+
+    assert sorted(matrix["flow"]) == sorted(
+        flow for flow, spec in FLOWS.items() if spec.matrix
+    )
+    assert matrix["seed"] == list(SEEDS)

@@ -14,7 +14,9 @@ dependencies = [
 stupidbench = "stupidbench.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=8.3.0"]
+# The workflow matrix and the flows marked for it are two spellings of one
+# thing, and only a test that reads both can tell they still agree.
+dev = ["pytest>=8.3.0", "pyyaml>=6.0.2"]
 
 [build-system]
 requires = ["uv-build>=0.9.2,<0.12.0"]

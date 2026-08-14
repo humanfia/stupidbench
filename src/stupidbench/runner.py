@@ -70,6 +70,13 @@ PROXY_MEMORY_MB = 64
 READINESS_SECONDS = 90
 TICK_SECONDS = 30
 
+#: How often a missing image is asked for before the segment gives up on it. The
+#: runtime image is sixteen gigabytes, so a registry that drops the pull partway
+#: is the likeliest thing here to cost a cell a whole segment, and it is also
+#: the one thing that usually works on being asked again.
+PULL_ATTEMPTS = 3
+PULL_BACKOFF_SECONDS = 20
+
 #: Kimi Code reads an ad-hoc model out of its environment and never writes it to
 #: disk; the managed provider it would otherwise use needs an interactive login
 #: that a runner cannot give it. The default capabilities leave out tool use,
@@ -196,7 +203,14 @@ def run(cell: Cell, seconds: int) -> str:
         try:
             client.images.get(image)
         except ImageNotFound:
-            client.images.pull(image)
+            for attempt in range(1, PULL_ATTEMPTS + 1):
+                try:
+                    client.images.pull(image)
+                    break
+                except APIError:
+                    if attempt == PULL_ATTEMPTS:
+                        raise
+                    time.sleep(PULL_BACKOFF_SECONDS * attempt)
 
     proxy_dir = Path(tempfile.mkdtemp(prefix="stupidbench-proxy-"))
     resolver_path = proxy_dir / "resolver.cfg"
@@ -435,6 +449,8 @@ def _agent_environment(flow: Flow) -> dict[str, str]:
         environment[TOKEN_VARIABLES[flow.tool]] = token
     if flow.context_window:
         environment["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = str(flow.context_window)
+    if flow.max_output:
+        environment["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] = str(flow.max_output)
     if flow.tool == "kimi":
         environment |= _KIMI_ENVIRONMENT | {
             "KIMI_MODEL_BASE_URL": KIMI_BASE_URL,

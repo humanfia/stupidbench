@@ -84,15 +84,41 @@ class Flow:
     #: model it does not recognise, and compacts the session against that rather
     #: than against what the model really holds.
     context_window: int | None = None
+    #: The longest one response may be. The cap is the CLI's rather than the
+    #: model's — Claude Code stops a response at sixty-four thousand tokens
+    #: whatever the model can write — and a turn that reaches it dies with an
+    #: error having recorded nothing, so the hour it spent thinking is spent for
+    #: nothing. Three of those in a row is what the first two hours of two
+    #: `opus5_max` cells went on. A flow says what its model really serves.
+    max_output: int | None = None
+    #: Whether a run carries this flow. One can be defined and runnable and
+    #: still be out of the matrix, and a run is not short for leaving one of
+    #: those out — but a run that leaves out a flow that is in the matrix has
+    #: lost a whole column of itself, and nothing else would say so.
+    matrix: bool = True
 
+
+#: What a claude-CLI flow is allowed to write in one response. Every model here
+#: serves at least this much — Opus 5 stops exactly here, DeepSeek V4 three
+#: times further out — and the CLI's own default is half of it, which is the
+#: only reason a turn ever ended having said nothing at all.
+MAX_OUTPUT = 128_000
 
 FLOWS: dict[str, Flow] = {
     "gpt56sol_max": Flow("codex", "gpt-5.6-sol", "max"),
     "gpt56terra_max": Flow("codex", "gpt-5.6-terra", "max"),
     "gpt56luna_max": Flow("codex", "gpt-5.6-luna", "max"),
-    "opus5_max": Flow("claude", "claude-opus-5", "max"),
-    "dsv4flash_max": Flow("claude", "deepseek-v4-flash", "max", DEEPSEEK, 1_048_576),
-    "k3_max": Flow("kimi", "kimi-code/k3", "max"),
+    "opus5_max": Flow("claude", "claude-opus-5", "max", max_output=MAX_OUTPUT),
+    "dsv4pro_max": Flow(
+        "claude", "deepseek-v4-pro", "max", DEEPSEEK, 1_048_576, MAX_OUTPUT
+    ),
+    "dsv4flash_max": Flow(
+        "claude", "deepseek-v4-flash", "max", DEEPSEEK, 1_048_576, MAX_OUTPUT
+    ),
+    # Out until its plan has quota again: a provider answering 403 spends a
+    # cell's day as fast as one answering properly, and nothing here can buy
+    # more of it.
+    "k3_max": Flow("kimi", "kimi-code/k3", "max", matrix=False),
 }
 
 SEEDS = (0, 1, 2)

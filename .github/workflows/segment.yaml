@@ -32,14 +32,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Every flow but `k3_max`, which is out until its plan has quota again:
-        # a provider answering 403 spends a cell's day as fast as one answering
-        # properly, and nothing here can buy more of it.
+        # Every flow marked for the matrix, which is said in `cell.py` and has
+        # to be said again here. A test reads both and fails when they differ,
+        # because nothing at run time would: a flow missing from this list is a
+        # column that quietly never appears.
         flow:
           - gpt56sol_max
           - gpt56terra_max
           - gpt56luna_max
           - opus5_max
+          - dsv4pro_max
           - dsv4flash_max
         seed: [0, 1, 2]
     env:
@@ -89,7 +91,16 @@ jobs:
       - name: Stage the cell
         run: uv run stupidbench prepare --flow ${{ matrix.flow }} --seed ${{ matrix.seed }}
 
+      # A segment is one leg of a relay, and no leg is the last chance a cell
+      # gets: whatever it fails at, the leg after it takes the cell back from
+      # this one's artifact and carries it on, and eight of them cover a budget
+      # six would. So a failure is recorded against the step and the job goes on
+      # to publish what the cell has — a segment that gave up on an agent
+      # getting nowhere is worth seeing, and worth nothing as a reason to call
+      # the run a failure. What the run is judged by is the report, which is the
+      # one job here that no later one can make good.
       - name: Run the segment
+        continue-on-error: true
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           CODEX_ACCESS_TOKEN: ${{ secrets.CODEX_ACCESS_TOKEN }}

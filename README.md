@@ -39,6 +39,13 @@ A run leaves nothing behind for the next one to continue. Run it early from the
 Actions tab, and re-run its failed jobs from there if Actions drops any: a
 second attempt takes each cell back where the first left it.
 
+A run is red when its results are short, not when a job of it was. Any segment
+may fail — an agent that got nowhere, a runner that stopped answering — and the
+leg after it takes that cell back where the failed one left it, which is what
+the two spare legs are for. What a run cannot make good is a cell missing the
+day it was given, or a cell that spent the whole day without once beating the
+score it started at, and those are what the report fails on.
+
 The same four commands work on any host:
 
 ```sh
@@ -54,14 +61,14 @@ A cell is done when it has spent its twenty-four hours of agent time; time
 between segments is not charged to it.
 
 A flow is a model and an effort. The models are `gpt56sol`, `gpt56terra`,
-`gpt56luna`, `opus5` and `dsv4flash`, all at `max`, which makes flows like
-`opus5_max`, five in all, each run on the three seeds 0, 1 and 2. A sixth,
+`gpt56luna`, `opus5`, `dsv4pro` and `dsv4flash`, all at `max`, which makes flows
+like `opus5_max`, six in all, each run on the three seeds 0, 1 and 2. A seventh,
 `k3_max`, is defined and runnable but out of the matrix while its plan has no
-quota left. A model is run by the CLI it belongs to, except `dsv4flash` —
-DeepSeek serves an Anthropic-shaped API, so `deepseek-v4-flash` is run by the
-claude CLI pointed at it. Every flow meets the task with a new session each
-turn, so what an agent carries through its twenty-four hours is only what it
-wrote down.
+quota left. A model is run by the CLI it belongs to, except the two DeepSeek
+ones — DeepSeek serves an Anthropic-shaped API, so `deepseek-v4-pro` and
+`deepseek-v4-flash` are run by the claude CLI pointed at it. Every flow meets
+the task with a new session each turn, so what an agent carries through its
+twenty-four hours is only what it wrote down.
 
 ## Results
 

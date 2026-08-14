@@ -24,6 +24,34 @@ def test_prepare_then_report_over_a_cell_that_never_ran(
     assert "No cell has run yet" in capsys.readouterr().out
 
 
+def test_report_fails_the_run_when_a_cell_is_short(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    # The report is the last thing a run does and the only thing that says what
+    # became of it. Every segment before it is free to fail, because the leg
+    # after it takes the cell on; a result that is not there is what no leg can
+    # recover, and it is the whole of what a red run should mean.
+    monkeypatch.setattr(cli, "pricing", dict)
+    cells = tmp_path / "cells"
+    cell = Cell("opus5_max", 0, cells / "opus5_max" / "0")
+    cell.cell_dir.mkdir(parents=True)
+    cell.events_path.write_text(
+        '{"datetime": "2026-08-04T00:00:00+00:00", "type": "start"}\n'
+        '{"datetime": "2026-08-04T02:00:00+00:00", "type": "stop"}\n',
+        encoding="utf-8",
+    )
+    cell.scores_path.write_text(
+        '{"datetime": "2026-08-04T01:00:00+00:00", "score": 1405}\n', encoding="utf-8"
+    )
+
+    status = cli.main(
+        ["--cells", str(cells), "report", "--out", str(tmp_path / "report")]
+    )
+
+    assert status == 1
+    assert "2.0h of the 24h" in capsys.readouterr().err
+
+
 def test_run_fails_when_the_cell_never_started(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture
 ) -> None:

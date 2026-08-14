@@ -18,7 +18,7 @@ import matplotlib
 import pandas as pd
 import seaborn as sns
 
-from stupidbench.cell import BUDGET_SECONDS, INIT_SCORE, Cell, elapsed_at
+from stupidbench.cell import BUDGET_SECONDS, FLOWS, INIT_SCORE, Cell, elapsed_at
 from stupidbench.usage import Pricing, cumulative, usages
 
 # A report is drawn where no display is, and the backend must be chosen before
@@ -202,7 +202,7 @@ def plot(curves: pd.DataFrame, path: Path) -> None:
     plt.close(figure)
 
 
-def markdown(histories: list[History], curves_name: str) -> str:
+def markdown(histories: list[History], curves_name: str, short: list[str]) -> str:
     """The report a run leaves in its job summary.
 
     A job summary resolves no relative path, so the curves are named rather
@@ -273,24 +273,72 @@ def markdown(histories: list[History], curves_name: str) -> str:
         "response, thinking included."
     )
     lines += ["", footnote, ""]
+    if short:
+        lines += [
+            "## What is missing",
+            "",
+            (
+                "A segment that failed is not what puts a cell here: the leg "
+                "after it takes the cell on, and eight of them cover a budget "
+                "six would. What is left is a cell the relay could not make "
+                "whole."
+            ),
+            "",
+            *(f"- {complaint}" for complaint in short),
+            "",
+        ]
     return "\n".join(lines)
 
 
-def report(cells_dir: Path, out_dir: Path, prices: Pricing) -> str:
-    """Writes the curves and the report, and returns the report."""
+def report(
+    cells_dir: Path, out_dir: Path, prices: Pricing, whole: bool = False
+) -> tuple[str, list[str]]:
+    """Writes the curves and the report, and returns it with what is missing.
+
+    The second half is what a run is judged by, and it is about results rather
+    than about jobs. A segment fails for one cell at a time and the leg after it
+    takes that cell back where the failed one left it, so a run with a failed
+    segment and a whole set of results is a run that worked as designed. What a
+    run has to be red for instead is a cell it could not make whole: one that
+    never spent the day it was given, or spent it without once beating the score
+    every cell starts at.
+
+    ``whole`` is what a run says about itself and a host reporting on one cell
+    does not: that every cell of the matrix should be here. Without it a cell
+    that is absent is simply one nobody ran; with it, it is a column of the
+    bench that went missing without a single job going red for it.
+    """
     histories = [
         read_history(cell, prices)
         for cell in Cell.all(cells_dir)
         if cell.state != "pending"
     ]
     out_dir.mkdir(parents=True, exist_ok=True)
+    short: list[str] = []
+    if whole:
+        short += [
+            f"`{cell.flow}`/{cell.seed} is not in this run at all"
+            for cell in Cell.all(cells_dir)
+            if FLOWS[cell.flow].matrix and cell.state == "pending"
+        ]
     if not histories:
         text = "# stupid bench\n\nNo cell has run yet.\n"
         (out_dir / "report.md").write_text(text, encoding="utf-8")
-        return text
+        return text, short
+    for history in sorted(histories, key=lambda h: (h.flow, h.seed)):
+        if history.state != "done":
+            short.append(
+                f"`{history.flow}`/{history.seed} spent {history.end.hours:.1f}h "
+                f"of the {BUDGET_SECONDS / 3600:.0f}h it is given"
+            )
+        elif len(history.points) == 1:
+            short.append(
+                f"`{history.flow}`/{history.seed} spent its whole day without "
+                f"once beating the {INIT_SCORE:,} it started at"
+            )
     curves = frame(histories)
     plot(curves, out_dir / "curves.png")
     curves.to_csv(out_dir / "curves.csv", index=False)
-    text = markdown(histories, "curves.png")
+    text = markdown(histories, "curves.png", short)
     (out_dir / "report.md").write_text(text, encoding="utf-8")
-    return text
+    return text, short

@@ -35,6 +35,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     commands.add_parser("redact", help="take every credential out of the cells")
     report = commands.add_parser("report", help="draw the curves and write the report")
     report.add_argument("--out", type=Path, default=Path("report"))
+    report.add_argument(
+        "--whole",
+        action="store_true",
+        help="judge this as a full run: every cell of the matrix must be in it",
+    )
     args = parser.parse_args(argv)
 
     if args.command == "redact":
@@ -43,8 +48,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.command == "report":
-        print(reporting.report(args.cells, args.out, pricing()))
-        return 0
+        # The last thing a run does, and the only thing that decides what became
+        # of it. Every segment before this one is allowed to fail, because the
+        # leg after it takes the cell on; what nothing after this can recover is
+        # a result that is not there.
+        text, short = reporting.report(args.cells, args.out, pricing(), args.whole)
+        print(text)
+        for complaint in short:
+            print(complaint, file=sys.stderr)
+        return 1 if short else 0
 
     cell = Cell(args.flow, args.seed, args.cells / args.flow / str(args.seed))
     if args.command == "prepare":
