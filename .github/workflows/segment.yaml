@@ -37,17 +37,13 @@ jobs:
         # because nothing at run time would: a flow missing from this list is a
         # column that quietly never appears.
         flow:
-          - gpt56sol_max
-          - gpt56terra_max
-          - gpt56luna_max
           - opus5_max
           - dsv4pro_max
-          - dsv4flash_max
-        seed: [0, 1, 2]
+        seed: [0]
     env:
       # Short of the six-hour job cap by enough to pull a sixteen-gigabyte image
       # ahead of the agent and to redact, pack and publish the cell behind it.
-      SEGMENT_SECONDS: "16200"
+      SEGMENT_SECONDS: "900"
       ARCHIVE: cell-${{ matrix.flow }}-${{ matrix.seed }}.tgz
     steps:
       # The runtime image is sixteen gigabytes, and a runner has room for it

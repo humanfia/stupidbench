@@ -31,15 +31,13 @@ name: stupid bench
 # artifacts of its own, so none of that reaches it.
 
 on:
-  schedule:
-    - cron: "0 0 * * 0"
   workflow_dispatch:
 
 # One bench at a time. Two runs share no cell now, but they would spend the same
 # credentials against the same rate limits, and neither would be the run it was
 # meant to be.
 concurrency:
-  group: ${{ github.workflow }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 # This repository is public, and only these two events can carry a secret: no
@@ -74,78 +72,6 @@ jobs:
       KIMI_MODEL_API_KEY: ${{ secrets.KIMI_MODEL_API_KEY }}
       DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
 
-  segment-3:
-    needs: segment-2
-    if: ${{ !cancelled() }}
-    uses: ./.github/workflows/segment.yaml
-    with:
-      segment: 3
-    secrets:
-      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-      CODEX_ACCESS_TOKEN: ${{ secrets.CODEX_ACCESS_TOKEN }}
-      KIMI_MODEL_API_KEY: ${{ secrets.KIMI_MODEL_API_KEY }}
-      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-
-  segment-4:
-    needs: segment-3
-    if: ${{ !cancelled() }}
-    uses: ./.github/workflows/segment.yaml
-    with:
-      segment: 4
-    secrets:
-      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-      CODEX_ACCESS_TOKEN: ${{ secrets.CODEX_ACCESS_TOKEN }}
-      KIMI_MODEL_API_KEY: ${{ secrets.KIMI_MODEL_API_KEY }}
-      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-
-  segment-5:
-    needs: segment-4
-    if: ${{ !cancelled() }}
-    uses: ./.github/workflows/segment.yaml
-    with:
-      segment: 5
-    secrets:
-      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-      CODEX_ACCESS_TOKEN: ${{ secrets.CODEX_ACCESS_TOKEN }}
-      KIMI_MODEL_API_KEY: ${{ secrets.KIMI_MODEL_API_KEY }}
-      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-
-  segment-6:
-    needs: segment-5
-    if: ${{ !cancelled() }}
-    uses: ./.github/workflows/segment.yaml
-    with:
-      segment: 6
-    secrets:
-      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-      CODEX_ACCESS_TOKEN: ${{ secrets.CODEX_ACCESS_TOKEN }}
-      KIMI_MODEL_API_KEY: ${{ secrets.KIMI_MODEL_API_KEY }}
-      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-
-  segment-7:
-    needs: segment-6
-    if: ${{ !cancelled() }}
-    uses: ./.github/workflows/segment.yaml
-    with:
-      segment: 7
-    secrets:
-      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-      CODEX_ACCESS_TOKEN: ${{ secrets.CODEX_ACCESS_TOKEN }}
-      KIMI_MODEL_API_KEY: ${{ secrets.KIMI_MODEL_API_KEY }}
-      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-
-  segment-8:
-    needs: segment-7
-    if: ${{ !cancelled() }}
-    uses: ./.github/workflows/segment.yaml
-    with:
-      segment: 8
-    secrets:
-      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-      CODEX_ACCESS_TOKEN: ${{ secrets.CODEX_ACCESS_TOKEN }}
-      KIMI_MODEL_API_KEY: ${{ secrets.KIMI_MODEL_API_KEY }}
-      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-
   # A segment knows one cell; the report reads them together, so that the seeds
   # of a flow can be averaged into one curve. It is the last thing the run does,
   # and every cell it reads is one this run finished.
@@ -156,7 +82,7 @@ jobs:
   # make good, and it fails when a cell is missing the day it was given or spent
   # that day without ever beating the score it started at.
   report:
-    needs: segment-8
+    needs: segment-2
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
